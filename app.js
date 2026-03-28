@@ -71,12 +71,12 @@ function renderSummary(entries){
 function renderBarChart(entries){
   const ctx=document.getElementById('barChart');
   const labels=entries.map(e=>e.name),data=entries.map(e=>e.current||0),memos=entries.map(e=>e.memo||'');
-  const colors=entries.map((_,i)=>{if(i===0)return'#E88A0A';if(i<=2)return'#3AABA8';if(i===entries.length-1&&entries.length>3)return'#2E8EC4';return'#2a6a6a'});
+  const colors=entries.map((_,i)=>{if(i===0)return'#E88A0A';if(i<=2)return'#3AABA8';if(i===entries.length-1&&entries.length>3)return'#2E8EC4';return'#8DC8C6'});
   if(barChart)barChart.destroy();
   barChart=new Chart(ctx,{type:'bar',data:{labels,datasets:[{data,backgroundColor:colors,borderRadius:4,maxBarThickness:40}]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{afterLabel:c=>memos[c.dataIndex]?'条件: '+memos[c.dataIndex]:''}}},
-    scales:{x:{ticks:{color:'#7ab5b3',font:{size:11}},grid:{display:false}},y:{ticks:{color:'#7ab5b3'},grid:{color:'rgba(58,171,168,0.1)'}}}}});
-  ctx.parentElement.style.background='#1e3030';ctx.parentElement.style.borderRadius='8px';
+    scales:{x:{ticks:{color:'#6B8180',font:{size:11}},grid:{display:false}},y:{ticks:{color:'#6B8180'},grid:{color:'rgba(58,171,168,0.1)'}}}}});
+  ctx.parentElement.style.background='#F5F2EC';ctx.parentElement.style.borderRadius='8px';
 }
 
 function renderTable(entries){
@@ -96,9 +96,9 @@ function renderLineChart(entries){
   });
   if(lineChart)lineChart.destroy();
   lineChart=new Chart(ctx,{type:'line',data:{datasets},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#7ab5b3',font:{size:10}}}},
-    scales:{x:{type:'linear',min:t0,max:Date.now(),ticks:{color:'#7ab5b3',callback:v=>new Date(v).toLocaleTimeString('ja-JP'),maxTicksLimit:6},grid:{color:'rgba(58,171,168,0.1)'}},
-    y:{ticks:{color:'#7ab5b3'},grid:{color:'rgba(58,171,168,0.1)'}}}}});
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#6B8180',font:{size:10}}}},
+    scales:{x:{type:'linear',min:t0,max:Date.now(),ticks:{color:'#6B8180',callback:v=>new Date(v).toLocaleTimeString('ja-JP'),maxTicksLimit:6},grid:{color:'rgba(58,171,168,0.1)'}},
+    y:{ticks:{color:'#6B8180'},grid:{color:'rgba(58,171,168,0.1)'}}}}});
 }
 
 function renderNotes(obj){
