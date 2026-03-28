@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SchooMy 明るさ比較システム v1.0</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<header>
+  <div class="header-left">
+    <div class="logo-badge">SchooMy</div>
+    <div class="header-title">明るさ<span>比較</span>システム</div>
+    <div class="version-tag">v1.0</div>
+  </div>
+  <div class="header-right">
+    <div class="status-pill" id="statusPill"><div class="pulse"></div><span id="statusText">待機中</span></div>
+    <div class="session-code" id="sessionCodeDisp">---</div>
+    <div class="clock" id="clock"></div>
+    <button class="demo-btn" id="demoBtn">デモ</button>
+  </div>
+</header>
+<main>
+  <div class="summary-grid">
+    <div class="summary-card max"><div class="summary-label">最大値</div><div class="summary-value" id="sumMax">--<span class="summary-unit">raw</span></div><div class="summary-who" id="sumMaxWho"></div></div>
+    <div class="summary-card avg"><div class="summary-label">平均値</div><div class="summary-value" id="sumAvg">--<span class="summary-unit">raw</span></div><div class="summary-who" id="sumAvgWho"></div></div>
+    <div class="summary-card min"><div class="summary-label">最小値</div><div class="summary-value" id="sumMin">--<span class="summary-unit">raw</span></div><div class="summary-who" id="sumMinWho"></div></div>
+    <div class="summary-card count"><div class="summary-label">参加人数</div><div class="summary-value" id="sumCount">0<span class="summary-unit">人</span></div><div class="summary-who" id="sumUpdated">最終更新: --</div></div>
+  </div>
+  <div class="two-col">
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title"><div class="icon">📊</div>明るさランキング</div>
+        <button class="csv-btn" id="csvBtn">⬇ CSV</button>
+      </div>
+      <div class="panel-body"><canvas id="barChart" height="260"></canvas></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><div class="panel-title"><div class="icon">👥</div>参加者一覧</div></div>
+      <div class="panel-body" style="padding:0;max-height:360px;overflow-y:auto">
+        <table class="participant-table">
+          <thead><tr><th>#</th><th>名前</th><th>現在値</th><th>条件</th><th>更新</th></tr></thead>
+          <tbody id="participantBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="bottom-grid">
+    <div class="panel">
+      <div class="panel-header"><div class="panel-title"><div class="icon">📈</div>時系列グラフ</div></div>
+      <div class="panel-body"><canvas id="lineChart" height="240"></canvas></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><div class="panel-title"><div class="icon">💡</div>気づきメモ</div></div>
+      <div class="panel-body">
+        <div class="note-form" id="noteForm">
+          <input type="text" id="noteAuthor" placeholder="名前">
+          <textarea id="noteText" placeholder="気づいたことを書こう..."></textarea>
+          <button id="noteSubmit">送信</button>
+        </div>
+        <div class="notes-list" id="notesList"></div>
+      </div>
+    </div>
+  </div>
+</main>
+<div class="my-device-bar">
+  <div class="my-device-inner">
+    <div class="my-label">MY DEVICE</div>
+    <div class="divider"></div>
+    <div class="input-group"><div class="input-label">名前</div><input class="my-input" id="myName" placeholder="名前を入力"></div>
+    <div class="input-group"><div class="input-label">セッションID</div><input class="my-input" id="mySession" placeholder="例: CLASS-A"></div>
+    <div class="input-group"><div class="input-label">条件メモ</div><input class="my-input memo-input" id="myMemo" placeholder="例: 窓際・カーテン全開"></div>
+    <button class="join-btn" id="joinBtn" disabled>参加する</button>
+    <div class="divider"></div>
+    <button class="connect-btn" id="serialBtn">🔌 接続</button>
+    <div class="my-current">
+      <div class="my-current-label">現在値</div>
+      <div class="my-current-val" id="myVal">--</div>
+      <div class="my-current-unit">raw</div>
+    </div>
+    <span class="demo-badge" id="demoBadge" style="display:none">DEMO MODE</span>
+  </div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
