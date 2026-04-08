@@ -1,7 +1,7 @@
-// Firebase config
+// Firebase config — gracefully handle missing/invalid config so demo mode still works
 const FIREBASE_CONFIG={apiKey:"REPLACE_ME",authDomain:"REPLACE_ME",databaseURL:"REPLACE_ME",projectId:"REPLACE_ME",storageBucket:"REPLACE_ME",messagingSenderId:"REPLACE_ME",appId:"REPLACE_ME"};
-firebase.initializeApp(FIREBASE_CONFIG);
-const db=firebase.database();
+let db=null;
+try{firebase.initializeApp(FIREBASE_CONFIG);db=firebase.database()}catch(e){console.warn('Firebase init skipped:',e.message)}
 
 let studentId=localStorage.getItem('studentId');
 if(!studentId){studentId=crypto.randomUUID();localStorage.setItem('studentId',studentId)}
@@ -24,7 +24,7 @@ joinBtn.addEventListener('click',()=>{
   currentSessionId=sessionId;joined=true;
   document.getElementById('sessionCodeDisp').textContent=sessionId;
   document.getElementById('noteAuthor').value=name;
-  db.ref('sessions/'+sessionId+'/students/'+studentId).set({name,memo,current:0,updatedAt:Date.now(),history:[]});
+  if(db)db.ref('sessions/'+sessionId+'/students/'+studentId).set({name,memo,current:0,updatedAt:Date.now(),history:[]});
   const pill=document.getElementById('statusPill');
   pill.classList.add('live');pill.querySelector('.pulse').classList.add('live');
   document.getElementById('statusText').textContent='接続中';
@@ -32,6 +32,7 @@ joinBtn.addEventListener('click',()=>{
 });
 
 function subscribeToSession(sid){
+  if(!db)return;
   if(studentsRef)studentsRef.off();if(notesRef)notesRef.off();
   studentsRef=db.ref('sessions/'+sid+'/students');
   notesRef=db.ref('sessions/'+sid+'/notes');
@@ -116,7 +117,7 @@ document.getElementById('noteSubmit').addEventListener('click',()=>{
   const a=document.getElementById('noteAuthor').value.trim()||'名無し';
   const t=document.getElementById('noteText').value.trim();
   if(!t)return;
-  db.ref('sessions/'+currentSessionId+'/notes').push({name:a,text:t,createdAt:Date.now()});
+  if(db)db.ref('sessions/'+currentSessionId+'/notes').push({name:a,text:t,createdAt:Date.now()});
   document.getElementById('noteText').value='';
 });
 
@@ -130,8 +131,8 @@ document.getElementById('serialBtn').addEventListener('click',async()=>{
     const dec=new TextDecoderStream();serialPort.readable.pipeTo(dec.writable);
     const reader=dec.readable.getReader();serialReader=reader;let buf='';
     (async()=>{while(true){const{value,done}=await reader.read();if(done)break;buf+=value;const lines=buf.split('\n');buf=lines.pop();for(const l of lines){const n=parseInt(l.trim(),10);if(!isNaN(n)){latestValue=n;document.getElementById('myVal').textContent=n}}}})();
-    serialWriteInterval=setInterval(()=>{if(latestValue!==null&&currentSessionId){db.ref('sessions/'+currentSessionId+'/students/'+studentId+'/current').set(latestValue);db.ref('sessions/'+currentSessionId+'/students/'+studentId+'/updatedAt').set(Date.now())}},1000);
-    historyInterval=setInterval(()=>{if(latestValue!==null&&currentSessionId){const hr=db.ref('sessions/'+currentSessionId+'/students/'+studentId+'/history');hr.once('value',s=>{let h=s.val()||[];if(!Array.isArray(h))h=Object.values(h);h.push({t:Date.now(),v:latestValue});if(h.length>300)h=h.slice(h.length-300);hr.set(h)})}},10000);
+    serialWriteInterval=setInterval(()=>{if(latestValue!==null&&currentSessionId&&db){db.ref('sessions/'+currentSessionId+'/students/'+studentId+'/current').set(latestValue);db.ref('sessions/'+currentSessionId+'/students/'+studentId+'/updatedAt').set(Date.now())}},1000);
+    historyInterval=setInterval(()=>{if(latestValue!==null&&currentSessionId&&db){const hr=db.ref('sessions/'+currentSessionId+'/students/'+studentId+'/history');hr.once('value',s=>{let h=s.val()||[];if(!Array.isArray(h))h=Object.values(h);h.push({t:Date.now(),v:latestValue});if(h.length>300)h=h.slice(h.length-300);hr.set(h)})}},10000);
   }catch(e){console.error('Serial error:',e)}
 });
 
