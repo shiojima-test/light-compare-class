@@ -135,43 +135,73 @@ document.getElementById('serialBtn').addEventListener('click',async()=>{
   }catch(e){console.error('Serial error:',e)}
 });
 
-const DEMO_NAMES=['田中 はるか','佐藤 けいた','鈴木 みお','高橋 りょう','伊藤 なな','渡辺 そうた','中村 ゆい','小林 だいき','加藤 えみ','山田 こうき'];
-const DEMO_MEMOS=['窓際・カーテン全開','廊下側・蛍光灯下','中央席','窓際・カーテン半分','廊下側・暗め','窓際・日差し強','中央・ライト直下','後方・壁際','前方・黒板近く','窓際・曇り空'];
+const DEMO_PARTICIPANTS=[
+  {name:'田中 あおい',memo:'窓際・直射日光',base:2840},
+  {name:'山本 こうた',memo:'廊下・蛍光灯',base:1950},
+  {name:'鈴木 はな',  memo:'教室中央',      base:1280},
+  {name:'佐藤 りく',  memo:'机の下',        base:890},
+  {name:'高橋 みなと',memo:'カバンの中',    base:420},
+  {name:'中村 さら',  memo:'引き出しの中',  base:193}
+];
+const DEMO_TIMELINE_NAMES=['田中 あおい','鈴木 はな','中村 さら'];
 
 document.getElementById('demoBtn').addEventListener('click',()=>{demoMode?stopDemo():startDemo()});
 
+function jitter(base){return Math.max(0,base+Math.floor((Math.random()-0.5)*base*0.06))}
+
+function buildDemoHistory(base){
+  const now=Date.now(),pts=[];
+  for(let i=30;i>=0;i--){pts.push({t:now-i*10000,v:jitter(base)})}
+  return pts;
+}
+
 function startDemo(){
-  demoMode=true;currentSessionId='DEMO-SESSION';
-  document.getElementById('mySession').value='DEMO-SESSION';
-  document.getElementById('sessionCodeDisp').textContent='DEMO-SESSION';
+  demoMode=true;currentSessionId='CLASS-2025-B';
+  // Header
+  document.getElementById('mySession').value='CLASS-2025-B';
+  document.getElementById('sessionCodeDisp').textContent='CLASS-2025-B';
   document.getElementById('demoBadge').style.display='';
   const btn=document.getElementById('demoBtn');btn.classList.add('active');btn.textContent='デモ停止';
-  const pill=document.getElementById('statusPill');pill.classList.remove('live');pill.querySelector('.pulse').classList.remove('live');
-  document.getElementById('statusText').textContent='デモ動作中';
-  subscribeToSession('DEMO-SESSION');
-  DEMO_NAMES.forEach((name,i)=>{
-    const sid='demo-'+i,val=Math.floor(Math.random()*900)+50;
-    db.ref('sessions/DEMO-SESSION/students/'+sid).set({name,memo:DEMO_MEMOS[i],current:val,updatedAt:Date.now(),history:[{t:Date.now(),v:val}]});
+  const pill=document.getElementById('statusPill');pill.classList.add('live');pill.querySelector('.pulse').classList.add('live');
+  document.getElementById('statusText').textContent='接続中';
+  // MY DEVICE
+  document.getElementById('myName').value='鈴木 はな';
+  document.getElementById('myMemo').value='教室中央';
+  document.getElementById('myVal').textContent='1280';
+  document.getElementById('noteAuthor').value='鈴木 はな';
+  // Build studentsData locally (no Firebase)
+  const now=Date.now();
+  studentsData={};
+  DEMO_PARTICIPANTS.forEach((p,i)=>{
+    const hasTimeline=DEMO_TIMELINE_NAMES.includes(p.name);
+    studentsData['demo-'+i]={name:p.name,memo:p.memo,current:p.base,updatedAt:now,history:hasTimeline?buildDemoHistory(p.base):[]};
   });
-  DEMO_NAMES.forEach((_,i)=>{
-    const sid='demo-'+i;
-    demoIntervals.push(setInterval(()=>{
-      const val=Math.floor(Math.random()*900)+50;
-      const sr=db.ref('sessions/DEMO-SESSION/students/'+sid);
-      sr.child('current').set(val);sr.child('updatedAt').set(Date.now());
-      sr.child('history').once('value',s=>{let h=s.val()||[];if(!Array.isArray(h))h=Object.values(h);h.push({t:Date.now(),v:val});if(h.length>300)h=h.slice(h.length-300);sr.child('history').set(h)});
-    },2000+Math.floor(Math.random()*1000)));
-  });
+  renderAll();
+  // Notes
+  renderNotes({'demo-note-1':{name:'鈴木 はな',text:'窓際は引き出しの中の約15倍明るかった！',createdAt:now}});
+  // Jitter interval — fluctuate values every 1.5s
+  demoIntervals.push(setInterval(()=>{
+    DEMO_PARTICIPANTS.forEach((p,i)=>{
+      const d=studentsData['demo-'+i];if(!d)return;
+      d.current=jitter(p.base);d.updatedAt=Date.now();
+      if(DEMO_TIMELINE_NAMES.includes(p.name)){d.history.push({t:Date.now(),v:d.current});if(d.history.length>300)d.history=d.history.slice(-300)}
+    });
+    // MY DEVICE value
+    const me=studentsData['demo-2'];if(me)document.getElementById('myVal').textContent=me.current;
+    renderAll();
+  },1500));
 }
 
 function stopDemo(){
   demoMode=false;demoIntervals.forEach(clearInterval);demoIntervals=[];
-  db.ref('sessions/DEMO-SESSION').remove();
   document.getElementById('demoBadge').style.display='none';
   const btn=document.getElementById('demoBtn');btn.classList.remove('active');btn.textContent='デモ';
   const pill=document.getElementById('statusPill');pill.classList.remove('live');pill.querySelector('.pulse').classList.remove('live');
   document.getElementById('statusText').textContent='待機中';
   document.getElementById('sessionCodeDisp').textContent='---';
+  document.getElementById('myName').value='';document.getElementById('myMemo').value='';
+  document.getElementById('myVal').textContent='--';document.getElementById('noteAuthor').value='';
+  document.getElementById('notesList').innerHTML='';
   currentSessionId=null;studentsData={};renderAll();
 }
 
