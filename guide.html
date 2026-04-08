@@ -6,13 +6,12 @@
 <title>使い方ガイド — SchooMy 明るさ比較システム</title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{--orange:#E88A0A;--teal:#3AABA8;--bg:#f5f5f5;--card:#fff;--text:#333;--gray:#888;--light-gray:#e0e0e0;--green:#2ecc71;--red:#e74c3c}
-body{font-family:Meiryo,sans-serif;color:var(--text);background:var(--bg);line-height:1.7}
-a{color:var(--teal);text-decoration:none}
+body{font-family:Meiryo,sans-serif;color:#333;background:#f5f0eb;line-height:1.7}
+a{color:#3AABA8;text-decoration:none}
 a:hover{text-decoration:underline}
 
 /* Hero */
-.hero{background:var(--orange);color:#fff;text-align:center;padding:3rem 1rem 2.5rem}
+.hero{background:#E88A0A;color:#fff;text-align:center;padding:3rem 1rem 2.5rem}
 .hero .badge{display:inline-block;background:rgba(255,255,255,.25);border:1px solid rgba(255,255,255,.6);border-radius:999px;padding:.2rem .9rem;font-size:.8rem;margin-bottom:1rem;letter-spacing:.05em}
 .hero h1{font-size:1.8rem;margin-bottom:.5rem}
 .hero .sub{font-size:1rem;opacity:.9}
@@ -20,111 +19,154 @@ a:hover{text-decoration:underline}
 /* Container */
 .container{max-width:820px;margin:0 auto;padding:1.5rem 1rem 4rem}
 section{margin-bottom:2.5rem}
-section h2{font-size:1.3rem;border-left:4px solid var(--orange);padding-left:.7rem;margin-bottom:1.2rem}
+section h2{font-size:1.3rem;border-left:4px solid #E88A0A;padding-left:.7rem;margin-bottom:1.2rem;color:#1a1a1a}
 
 /* Steps */
 .step{margin-bottom:2rem}
 .step-header{display:flex;align-items:center;gap:.6rem;margin-bottom:.8rem}
-.step-num{display:inline-flex;align-items:center;justify-content:center;width:2rem;height:2rem;border-radius:50%;background:var(--orange);color:#fff;font-weight:bold;font-size:.9rem;flex-shrink:0}
-.step-title{font-size:1.05rem;font-weight:bold}
+.step-num{display:inline-flex;align-items:center;justify-content:center;width:2rem;height:2rem;border-radius:50%;background:#E88A0A;color:#fff;font-weight:bold;font-size:.9rem;flex-shrink:0}
+.step-title{font-size:1.05rem;font-weight:bold;color:#1a1a1a}
 
-/* Mock screen */
-.mock{background:#1a1a2e;border-radius:10px;overflow:hidden;margin:.6rem 0;font-size:.78rem;color:#ccc;border:1px solid #333}
-.mock-bar{display:flex;align-items:center;gap:.5rem;padding:.4rem .8rem;background:#111;font-size:.72rem}
-.mock-bar .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
-.mock-bar .dot.gray{background:#666}
-.mock-bar .dot.green{background:var(--green)}
-.mock-bar .dot.orange{background:var(--orange)}
-.mock-bar .pulse-dot{animation:pulse-anim 1.2s infinite}
-@keyframes pulse-anim{0%,100%{opacity:1}50%{opacity:.4}}
-.mock-body{padding:.8rem}
-.mock-label{font-size:.65rem;color:#888;margin-bottom:.2rem;text-transform:uppercase;letter-spacing:.04em}
-.mock-field{background:#252540;border:1px solid #444;border-radius:4px;padding:.3rem .5rem;margin-bottom:.35rem;color:#ddd;font-size:.75rem}
-.mock-btn{display:inline-block;border-radius:5px;padding:.35rem .9rem;font-size:.75rem;font-weight:bold;border:none;cursor:default;margin-top:.3rem}
-.mock-btn.gray{background:#555;color:#999}
-.mock-btn.orange{background:var(--orange);color:#fff}
-.mock-btn.orange.disabled{opacity:.6}
-.mock-btn.green{background:var(--green);color:#fff}
-.mock-usb{display:flex;align-items:center;gap:.4rem;padding:.4rem .8rem;font-size:.72rem;border-top:1px solid #333}
-.mock-usb .indicator{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+/* ===== Mock screen (light theme matching actual site) ===== */
+.mock-screen{color-scheme:light;background:#f5f0eb;border-radius:12px;overflow:hidden;margin:.6rem 0;font-size:.78rem;color:#1a1a1a;border:1px solid #e8e0d8;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+
+/* Mock header (white bar) */
+.mock-header{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#ffffff;border-bottom:1px solid #e8e0d8;font-size:.72rem;gap:8px;flex-wrap:wrap}
+.mock-header-left{display:flex;align-items:center;gap:8px}
+.mock-logo{background:#3AABA8;color:#fff;font-size:9px;font-weight:bold;padding:2px 7px;border-radius:3px;letter-spacing:.04em}
+.mock-app-title{font-size:12px;font-weight:bold;color:#1a1a1a}
+.mock-app-title span{color:#3AABA8}
+.mock-version{font-size:9px;color:#888;background:#f0ebe1;padding:1px 6px;border-radius:8px;border:1px solid #e8e0d8}
+.mock-header-right{display:flex;align-items:center;gap:6px}
+.mock-status-pill{display:flex;align-items:center;gap:4px;border-radius:14px;padding:3px 9px;font-size:10px;font-weight:bold}
+.mock-status-pill.idle{background:rgba(232,138,10,.1);border:1px solid rgba(232,138,10,.25);color:#E88A0A}
+.mock-status-pill.live{background:rgba(58,171,168,.1);border:1px solid rgba(58,171,168,.25);color:#3AABA8}
+.mock-status-pill.searching{background:rgba(232,138,10,.1);border:1px solid rgba(232,138,10,.25);color:#E88A0A}
+.mock-status-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.mock-status-dot.idle{background:#E88A0A}
+.mock-status-dot.live{background:#3AABA8;animation:mock-pulse 1.5s ease-in-out infinite}
+.mock-status-dot.searching{background:#E88A0A;animation:mock-pulse 1.5s ease-in-out infinite}
+@keyframes mock-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}
+.mock-session-code{font-size:10px;color:#888;background:#f0ebe1;padding:2px 8px;border-radius:3px;border:1px solid #e8e0d8;font-family:monospace;letter-spacing:.08em}
+
+/* Mock body */
+.mock-body{padding:12px}
+
+/* Mock stat cards */
+.mock-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
+.mock-stat-card{background:#ffffff;border:1px solid #e8e0d8;border-radius:12px;padding:10px 12px;position:relative;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.mock-stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px}
+.mock-stat-card.max::before{background:#E88A0A}
+.mock-stat-card.avg::before{background:#3AABA8}
+.mock-stat-card.min::before{background:#2E8EC4}
+.mock-stat-card.count::before{background:#5cc8c5}
+.mock-stat-card .stat-label{font-size:9px;color:#888;letter-spacing:.06em;text-transform:uppercase;margin-bottom:3px}
+.mock-stat-card .stat-val{font-size:18px;font-weight:900;line-height:1}
+.mock-stat-card.max .stat-val{color:#E88A0A}
+.mock-stat-card.avg .stat-val{color:#3AABA8}
+.mock-stat-card.min .stat-val{color:#2E8EC4}
+.mock-stat-card.count .stat-val{color:#1a1a1a}
+.mock-stat-card .stat-unit{font-size:10px;font-weight:400;color:#888;margin-left:2px}
+
+/* Mock panel (white card) */
+.mock-panel{background:#ffffff;border:1px solid #e8e0d8;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.04);margin-bottom:10px}
+.mock-panel-header{padding:10px 14px;border-bottom:1px solid #e8e0d8;display:flex;align-items:center;justify-content:space-between}
+.mock-panel-title{font-size:12px;font-weight:bold;color:#1a1a1a;display:flex;align-items:center;gap:6px}
+.mock-panel-title .icon{width:18px;height:18px;background:#3AABA8;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:10px}
+.mock-csv-btn{background:transparent;border:1px solid #e8e0d8;color:#888;border-radius:5px;padding:3px 8px;font-size:10px;cursor:default}
+.mock-panel-body{padding:12px 14px}
+
+/* Mock table */
+.mock-table{width:100%;border-collapse:collapse;font-size:.72rem}
+.mock-table th{text-align:left;color:#888;padding:6px 8px;border-bottom:1px solid #e8e0d8;font-size:9px;letter-spacing:.06em;text-transform:uppercase;font-weight:500}
+.mock-table td{padding:8px;border-bottom:1px solid rgba(58,171,168,.08);color:#1a1a1a}
+.mock-table tr.me td{background:rgba(232,138,10,.06)}
+.mock-table .rank{font-weight:900;font-size:12px;color:#888}
+.mock-table .rank.r1{color:#E88A0A}
+.mock-table .rank.r2{color:#b8920a}
+.mock-table .rank.r3{color:#3AABA8}
+.mock-table .p-name{font-weight:bold}
+.mock-table .p-val{font-weight:900;font-variant-numeric:tabular-nums}
+.mock-table .p-unit{font-size:9px;color:#888}
+.mock-table .p-memo{font-size:10px;color:#888;background:#f0ebe1;padding:1px 5px;border-radius:3px}
+
+/* Mock MY DEVICE bar */
+.mock-device-bar{background:#ffffff;border:1px solid #e8e0d8;border-radius:12px;padding:10px 14px;display:flex;align-items:center;gap:12px;box-shadow:0 -2px 12px rgba(0,0,0,.05);flex-wrap:wrap;margin-top:8px}
+.mock-device-label{font-size:10px;font-weight:bold;color:#3AABA8;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
+.mock-device-divider{width:1px;height:28px;background:#e8e0d8;flex-shrink:0}
+.mock-input-group{display:flex;flex-direction:column;gap:2px}
+.mock-input-label{font-size:8px;color:#888;text-transform:uppercase;letter-spacing:.04em}
+.mock-input{background:#f5f0eb;border:1px solid #e8e0d8;border-radius:5px;color:#1a1a1a;font-size:11px;padding:4px 8px}
+.mock-join-btn{border:none;border-radius:6px;padding:6px 14px;font-size:11px;font-weight:bold;cursor:default;white-space:nowrap}
+.mock-join-btn.disabled{background:#3AABA8;color:#fff;opacity:.4}
+.mock-join-btn.active{background:#3AABA8;color:#fff}
+.mock-connect-btn{border:none;border-radius:6px;padding:6px 14px;font-size:11px;font-weight:bold;cursor:default;white-space:nowrap;display:flex;align-items:center;gap:4px}
+.mock-connect-btn.teal{background:#3AABA8;color:#fff}
+.mock-connect-btn.gray{background:#ddd;color:#999}
+.mock-connect-btn.searching{background:#E88A0A;color:#fff;opacity:.7}
+.mock-current-wrap{display:flex;flex-direction:column;align-items:center;gap:1px;margin-left:auto}
+.mock-current-label{font-size:8px;color:#888;text-transform:uppercase;letter-spacing:.04em}
+.mock-current-val{font-size:22px;font-weight:900;color:#E88A0A;line-height:1;font-variant-numeric:tabular-nums}
+.mock-current-unit{font-size:10px;color:#888}
+.mock-current-placeholder{font-size:22px;font-weight:900;color:#ccc;line-height:1}
+
+/* Mock USB indicator (inside device bar area) */
+.mock-usb-indicator{display:flex;align-items:center;gap:6px;padding:6px 14px;font-size:11px;border-top:1px solid #e8e0d8;background:#ffffff;border-radius:0 0 12px 12px}
+.mock-usb-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
 
 /* Dialog mock */
-.mock-dialog{background:#fff;color:#333;border-radius:8px;margin:.6rem auto;padding:.7rem;max-width:280px;font-size:.75rem}
-.mock-dialog .dialog-title{font-weight:bold;margin-bottom:.4rem;font-size:.8rem}
-.mock-dialog .dialog-item{display:flex;align-items:center;gap:.4rem;padding:.35rem .5rem;border-radius:4px;background:#e8f4fd;border:1px solid #b0d4f1;margin-bottom:.3rem}
-.mock-dialog .dialog-item .radio{width:12px;height:12px;border-radius:50%;border:2px solid var(--teal);display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.mock-dialog .dialog-item .radio::after{content:'';width:6px;height:6px;border-radius:50%;background:var(--teal)}
-.mock-dialog .dialog-actions{display:flex;gap:.4rem;justify-content:flex-end;margin-top:.5rem}
-.mock-dialog .dialog-actions button{border:none;padding:.3rem .7rem;border-radius:4px;font-size:.72rem;cursor:default}
-.mock-dialog .dialog-actions .cancel{background:#eee;color:#666}
-.mock-dialog .dialog-actions .ok{background:var(--teal);color:#fff}
-
-/* MY DEVICE mock section */
-.mock-mydevice{display:grid;grid-template-columns:1fr 1fr 1fr;gap:.4rem;margin-top:.5rem}
-.mock-mydevice .mock-field-group{display:flex;flex-direction:column}
-.mock-current{display:flex;align-items:baseline;gap:.3rem;margin-top:.5rem}
-.mock-current .val{font-size:1.4rem;font-weight:bold;color:var(--orange)}
-.mock-current .unit{font-size:.75rem;color:#888}
+.mock-dialog-overlay{background:rgba(0,0,0,.3);border-radius:8px;padding:16px;margin:8px 0}
+.mock-dialog{background:#fff;color:#1a1a1a;border-radius:10px;margin:0 auto;padding:14px;max-width:280px;font-size:.75rem;box-shadow:0 8px 32px rgba(0,0,0,.2)}
+.mock-dialog .dialog-title{font-weight:bold;margin-bottom:8px;font-size:.82rem;color:#1a1a1a}
+.mock-dialog .dialog-item{display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:6px;background:#e8f4fd;border:1px solid #b0d4f1;margin-bottom:4px}
+.mock-dialog .dialog-item .radio{width:14px;height:14px;border-radius:50%;border:2px solid #3AABA8;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.mock-dialog .dialog-item .radio::after{content:'';width:7px;height:7px;border-radius:50%;background:#3AABA8}
+.mock-dialog .dialog-actions{display:flex;gap:6px;justify-content:flex-end;margin-top:8px}
+.mock-dialog .dialog-actions button{border:none;padding:5px 12px;border-radius:5px;font-size:.72rem;cursor:default;font-weight:bold}
+.mock-dialog .dialog-actions .cancel{background:#f0f0f0;color:#888}
+.mock-dialog .dialog-actions .ok{background:#3AABA8;color:#fff}
 
 /* Hint box */
-.hint{background:#fff8e1;border-left:4px solid var(--orange);border-radius:0 6px 6px 0;padding:.7rem 1rem;margin:.8rem 0;font-size:.85rem}
-.hint strong{color:var(--orange)}
+.hint{background:#fff8e1;border-left:4px solid #E88A0A;border-radius:0 6px 6px 0;padding:.7rem 1rem;margin:.8rem 0;font-size:.85rem}
+.hint strong{color:#E88A0A}
 
 /* Numbered list (参加のしかた) */
 .join-steps{counter-reset:join}
 .join-steps li{list-style:none;position:relative;padding-left:2.2rem;margin-bottom:.8rem;font-size:.95rem}
-.join-steps li::before{counter-increment:join;content:counter(join);position:absolute;left:0;top:0;width:1.7rem;height:1.7rem;border-radius:50%;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:.85rem}
+.join-steps li::before{counter-increment:join;content:counter(join);position:absolute;left:0;top:0;width:1.7rem;height:1.7rem;border-radius:50%;background:#3AABA8;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:.85rem}
 
 /* Annotated mock (画面の見方) */
 .annotated-wrap{position:relative}
-.anno-badge{position:absolute;width:1.5rem;height:1.5rem;border-radius:50%;background:var(--teal);color:#fff;font-size:.75rem;font-weight:bold;display:flex;align-items:center;justify-content:center;z-index:2;box-shadow:0 2px 6px rgba(0,0,0,.3)}
+.anno-badge{position:absolute;width:1.5rem;height:1.5rem;border-radius:50%;background:#3AABA8;color:#fff;font-size:.75rem;font-weight:bold;display:flex;align-items:center;justify-content:center;z-index:2;box-shadow:0 2px 6px rgba(0,0,0,.2)}
 .anno-list{margin-top:1rem}
 .anno-list dl{display:grid;grid-template-columns:auto 1fr;gap:.3rem .8rem;font-size:.9rem}
-.anno-list dt{display:flex;align-items:center;justify-content:center;width:1.5rem;height:1.5rem;border-radius:50%;background:var(--teal);color:#fff;font-weight:bold;font-size:.75rem;flex-shrink:0}
+.anno-list dt{display:flex;align-items:center;justify-content:center;width:1.5rem;height:1.5rem;border-radius:50%;background:#3AABA8;color:#fff;font-weight:bold;font-size:.75rem;flex-shrink:0}
 .anno-list dd{margin:0;padding:.15rem 0}
 
-/* Stats grid in mock */
-.mock-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:.4rem;margin-bottom:.6rem}
-.mock-stat-card{background:#252540;border-radius:6px;padding:.4rem;text-align:center}
-.mock-stat-card .stat-label{font-size:.6rem;color:#888}
-.mock-stat-card .stat-val{font-size:1rem;font-weight:bold;color:var(--orange)}
-.mock-stat-card .stat-unit{font-size:.6rem;color:#888}
-.mock-stat-card.count .stat-val{color:var(--teal)}
-
-/* Ranking table in mock */
-.mock-table{width:100%;border-collapse:collapse;font-size:.72rem}
-.mock-table th{text-align:left;color:#888;padding:.25rem .3rem;border-bottom:1px solid #333}
-.mock-table td{padding:.3rem;border-bottom:1px solid #2a2a40}
-.mock-table tr.me{background:rgba(232,138,10,.15)}
-.mock-table .rank{font-weight:bold;color:var(--orange)}
-.mock-table .rank.gold{color:#FFD700}
-.mock-table .rank.silver{color:#C0C0C0}
-.mock-table .rank.bronze{color:#CD7F32}
-
-/* Mock CSV button */
-.mock-csv{display:inline-block;background:#333;color:#aaa;border-radius:4px;padding:.2rem .5rem;font-size:.65rem;float:right}
-
 /* Timeline */
-.timeline{position:relative;padding-left:2rem;border-left:3px solid var(--teal);margin-left:.5rem}
+.timeline{position:relative;padding-left:2rem;border-left:3px solid #3AABA8;margin-left:.5rem}
 .timeline-item{position:relative;margin-bottom:1.5rem;padding-bottom:.5rem}
-.timeline-item::before{content:'';position:absolute;left:-2rem;top:.35rem;transform:translateX(calc(-50% + 1rem - 1.5px));width:14px;height:14px;border-radius:50%;background:var(--teal);border:3px solid var(--bg)}
-.timeline-item .time-label{font-weight:bold;color:var(--teal);font-size:.9rem}
-.timeline-item .time-title{font-weight:bold;font-size:1rem;margin:.15rem 0}
+.timeline-item::before{content:'';position:absolute;left:-2rem;top:.35rem;transform:translateX(calc(-50% + 1rem - 1.5px));width:14px;height:14px;border-radius:50%;background:#3AABA8;border:3px solid #f5f0eb}
+.timeline-item .time-label{font-weight:bold;color:#3AABA8;font-size:.9rem}
+.timeline-item .time-title{font-weight:bold;font-size:1rem;margin:.15rem 0;color:#1a1a1a}
 .timeline-item .time-desc{font-size:.9rem;color:#555}
 
 /* Back link */
 .back-link{display:inline-flex;align-items:center;gap:.3rem;margin-bottom:1rem;font-size:.9rem}
 
 /* Footer */
-.guide-footer{text-align:center;padding:2rem 1rem;font-size:.8rem;color:#999;border-top:1px solid #e0e0e0;margin-top:2rem}
+.guide-footer{text-align:center;padding:2rem 1rem;font-size:.8rem;color:#999;border-top:1px solid #e8e0d8;margin-top:2rem}
 
 /* Responsive */
 @media(max-width:600px){
   .hero h1{font-size:1.3rem}
   .mock-stats{grid-template-columns:repeat(2,1fr)}
-  .mock-mydevice{grid-template-columns:1fr}
+  .mock-device-bar{flex-direction:column;align-items:stretch;gap:8px}
+  .mock-device-divider{width:100%;height:1px}
+  .mock-current-wrap{flex-direction:row;align-items:center;gap:6px;margin-left:0}
   .anno-badge{display:none}
   .mock-table{font-size:.65rem}
+  .mock-header{flex-direction:column;align-items:flex-start;gap:4px}
 }
 </style>
 </head>
@@ -153,34 +195,50 @@ section h2{font-size:1.3rem;border-left:4px solid var(--orange);padding-left:.7r
       <p>オレンジボードとパソコンをUSBケーブルでつなぎます。</p>
 
       <!-- Mock ① 接続前 -->
-      <div class="mock">
-        <div class="mock-bar">
-          <span class="dot gray"></span>
-          <span>待機中</span>
-        </div>
-        <div class="mock-body">
-          <div class="mock-label">MY DEVICE</div>
-          <div class="mock-mydevice">
-            <div class="mock-field-group">
-              <div class="mock-label">名前</div>
-              <div class="mock-field">鈴木 はな</div>
-            </div>
-            <div class="mock-field-group">
-              <div class="mock-label">セッションID</div>
-              <div class="mock-field">CLASS-2025-B</div>
-            </div>
-            <div class="mock-field-group">
-              <div class="mock-label">条件メモ</div>
-              <div class="mock-field">教室中央</div>
-            </div>
+      <div class="mock-screen">
+        <div class="mock-header">
+          <div class="mock-header-left">
+            <span class="mock-logo">SchooMy</span>
+            <span class="mock-app-title">明るさ<span>比較</span>システム</span>
+            <span class="mock-version">v1.0</span>
           </div>
-          <div style="margin-top:.5rem">
-            <span class="mock-btn gray">🔌 接続</span>
+          <div class="mock-header-right">
+            <div class="mock-status-pill idle">
+              <span class="mock-status-dot idle"></span>
+              <span>待機中</span>
+            </div>
+            <span class="mock-session-code">---</span>
           </div>
         </div>
-        <div class="mock-usb">
-          <span class="indicator" style="background:#666"></span>
-          <span>オレンジボード未接続</span>
+        <div class="mock-body" style="padding-bottom:0">
+          <div class="mock-device-bar">
+            <span class="mock-device-label">MY DEVICE</span>
+            <span class="mock-device-divider"></span>
+            <div class="mock-input-group">
+              <span class="mock-input-label">名前</span>
+              <span class="mock-input">鈴木 はな</span>
+            </div>
+            <div class="mock-input-group">
+              <span class="mock-input-label">セッションID</span>
+              <span class="mock-input">CLASS-2025-B</span>
+            </div>
+            <div class="mock-input-group">
+              <span class="mock-input-label">条件メモ</span>
+              <span class="mock-input">教室中央</span>
+            </div>
+            <span class="mock-join-btn disabled">参加する</span>
+            <span class="mock-device-divider"></span>
+            <span class="mock-connect-btn gray">🔌 接続</span>
+            <div class="mock-current-wrap">
+              <span class="mock-current-label">現在値</span>
+              <span class="mock-current-placeholder">--</span>
+              <span class="mock-current-unit">raw</span>
+            </div>
+          </div>
+        </div>
+        <div class="mock-usb-indicator">
+          <span class="mock-usb-dot" style="background:#ccc"></span>
+          <span style="color:#888">オレンジボード未接続</span>
         </div>
       </div>
     </div>
@@ -194,30 +252,44 @@ section h2{font-size:1.3rem;border-left:4px solid var(--orange);padding-left:.7r
       <p>ブラウザにポート選択画面が出ます。「USB Serial Device」を選んで「接続」をクリックします。</p>
 
       <!-- Mock ② ポート選択中 -->
-      <div class="mock">
-        <div class="mock-bar">
-          <span class="dot orange pulse-dot"></span>
-          <span>ポートを検索中...</span>
-        </div>
-        <div class="mock-body">
-          <span class="mock-btn orange disabled">接続中...</span>
-
-          <!-- Dialog -->
-          <div class="mock-dialog">
-            <div class="dialog-title">シリアルポートを選択</div>
-            <div class="dialog-item">
-              <div class="radio"></div>
-              <span>USB Serial Device (COM3)</span>
+      <div class="mock-screen">
+        <div class="mock-header">
+          <div class="mock-header-left">
+            <span class="mock-logo">SchooMy</span>
+            <span class="mock-app-title">明るさ<span>比較</span>システム</span>
+            <span class="mock-version">v1.0</span>
+          </div>
+          <div class="mock-header-right">
+            <div class="mock-status-pill searching">
+              <span class="mock-status-dot searching"></span>
+              <span>ポートを検索中...</span>
             </div>
-            <div class="dialog-actions">
-              <button class="cancel">キャンセル</button>
-              <button class="ok">接続</button>
+            <span class="mock-session-code">---</span>
+          </div>
+        </div>
+        <div class="mock-body" style="padding-bottom:0">
+          <div style="margin-bottom:8px">
+            <span class="mock-connect-btn searching">接続中...</span>
+          </div>
+
+          <!-- Dialog overlay -->
+          <div class="mock-dialog-overlay">
+            <div class="mock-dialog">
+              <div class="dialog-title">シリアルポートを選択</div>
+              <div class="dialog-item">
+                <div class="radio"></div>
+                <span>USB Serial Device (COM3)</span>
+              </div>
+              <div class="dialog-actions">
+                <button class="cancel">キャンセル</button>
+                <button class="ok">接続</button>
+              </div>
             </div>
           </div>
         </div>
-        <div class="mock-usb">
-          <span class="indicator" style="background:var(--orange)"></span>
-          <span style="color:var(--orange)">ポートを検索中...</span>
+        <div class="mock-usb-indicator">
+          <span class="mock-usb-dot" style="background:#E88A0A"></span>
+          <span style="color:#E88A0A">ポートを検索中...</span>
         </div>
       </div>
 
@@ -235,35 +307,50 @@ section h2{font-size:1.3rem;border-left:4px solid var(--orange);padding-left:.7r
       <p>ステータスが緑色になれば接続成功です。自動的に計測が始まります。</p>
 
       <!-- Mock ③ 接続完了 -->
-      <div class="mock">
-        <div class="mock-bar">
-          <span class="dot green"></span>
-          <span style="color:var(--green)">接続中 — CLASS-2025-B</span>
-        </div>
-        <div class="mock-body">
-          <div class="mock-label">MY DEVICE</div>
-          <div class="mock-mydevice">
-            <div class="mock-field-group">
-              <div class="mock-label">名前</div>
-              <div class="mock-field">鈴木 はな</div>
-            </div>
-            <div class="mock-field-group">
-              <div class="mock-label">セッションID</div>
-              <div class="mock-field">CLASS-2025-B</div>
-            </div>
-            <div class="mock-field-group">
-              <div class="mock-label">条件メモ</div>
-              <div class="mock-field">教室中央</div>
-            </div>
+      <div class="mock-screen">
+        <div class="mock-header">
+          <div class="mock-header-left">
+            <span class="mock-logo">SchooMy</span>
+            <span class="mock-app-title">明るさ<span>比較</span>システム</span>
+            <span class="mock-version">v1.0</span>
           </div>
-          <div class="mock-current">
-            <span class="val">1280</span>
-            <span class="unit">raw</span>
+          <div class="mock-header-right">
+            <div class="mock-status-pill live">
+              <span class="mock-status-dot live"></span>
+              <span>接続中</span>
+            </div>
+            <span class="mock-session-code">CLASS-2025-B</span>
           </div>
         </div>
-        <div class="mock-usb">
-          <span class="indicator" style="background:var(--green)"></span>
-          <span style="color:var(--green)">USB Serial Device (COM3) — 接続済み</span>
+        <div class="mock-body" style="padding-bottom:0">
+          <div class="mock-device-bar">
+            <span class="mock-device-label">MY DEVICE</span>
+            <span class="mock-device-divider"></span>
+            <div class="mock-input-group">
+              <span class="mock-input-label">名前</span>
+              <span class="mock-input">鈴木 はな</span>
+            </div>
+            <div class="mock-input-group">
+              <span class="mock-input-label">セッションID</span>
+              <span class="mock-input">CLASS-2025-B</span>
+            </div>
+            <div class="mock-input-group">
+              <span class="mock-input-label">条件メモ</span>
+              <span class="mock-input">教室中央</span>
+            </div>
+            <span class="mock-join-btn active">参加する</span>
+            <span class="mock-device-divider"></span>
+            <span class="mock-connect-btn teal">🔌 接続済み</span>
+            <div class="mock-current-wrap">
+              <span class="mock-current-label">現在値</span>
+              <span class="mock-current-val">1280</span>
+              <span class="mock-current-unit">raw</span>
+            </div>
+          </div>
+        </div>
+        <div class="mock-usb-indicator">
+          <span class="mock-usb-dot" style="background:#2ecc71"></span>
+          <span style="color:#2ecc71">USB Serial Device (COM3) — 接続済み</span>
         </div>
       </div>
     </div>
@@ -286,53 +373,83 @@ section h2{font-size:1.3rem;border-left:4px solid var(--orange);padding-left:.7r
 
     <div class="annotated-wrap">
       <!-- Mock ④ ランキング画面 -->
-      <div class="mock" style="position:relative">
-        <!-- Badge ① -->
-        <div class="anno-badge" style="top:4px;right:10px">①</div>
-        <div class="mock-bar">
-          <span class="dot green"></span>
-          <span style="color:var(--green)">接続中 — CLASS-2025-B</span>
+      <div class="mock-screen" style="position:relative">
+        <!-- Badge ① on header -->
+        <div class="anno-badge" style="top:6px;right:10px">①</div>
+        <div class="mock-header">
+          <div class="mock-header-left">
+            <span class="mock-logo">SchooMy</span>
+            <span class="mock-app-title">明るさ<span>比較</span>システム</span>
+            <span class="mock-version">v1.0</span>
+          </div>
+          <div class="mock-header-right">
+            <div class="mock-status-pill live">
+              <span class="mock-status-dot live"></span>
+              <span>接続中</span>
+            </div>
+            <span class="mock-session-code">CLASS-2025-B</span>
+          </div>
         </div>
         <div class="mock-body">
-          <!-- Badge ② -->
+          <!-- Badge ② on stats -->
           <div style="position:relative">
-            <div class="anno-badge" style="top:-6px;right:-6px">②</div>
+            <div class="anno-badge" style="top:-6px;right:-4px">②</div>
             <div class="mock-stats">
-              <div class="mock-stat-card"><div class="stat-label">最大値</div><div class="stat-val">2840<span class="stat-unit"> raw</span></div></div>
-              <div class="mock-stat-card"><div class="stat-label">平均値</div><div class="stat-val">1421<span class="stat-unit"> raw</span></div></div>
-              <div class="mock-stat-card"><div class="stat-label">最小値</div><div class="stat-val">193<span class="stat-unit"> raw</span></div></div>
-              <div class="mock-stat-card count"><div class="stat-label">参加</div><div class="stat-val">6<span class="stat-unit"> 人</span></div></div>
+              <div class="mock-stat-card max"><div class="stat-label">最大値</div><div class="stat-val">2840<span class="stat-unit"> raw</span></div></div>
+              <div class="mock-stat-card avg"><div class="stat-label">平均値</div><div class="stat-val">1421<span class="stat-unit"> raw</span></div></div>
+              <div class="mock-stat-card min"><div class="stat-label">最小値</div><div class="stat-val">193<span class="stat-unit"> raw</span></div></div>
+              <div class="mock-stat-card count"><div class="stat-label">参加人数</div><div class="stat-val">6<span class="stat-unit"> 人</span></div></div>
             </div>
           </div>
 
-          <!-- Badge ③ -->
+          <!-- Badge ③ on ranking -->
           <div style="position:relative">
-            <div class="anno-badge" style="top:-6px;right:-6px">③</div>
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.3rem">
-              <span style="font-size:.75rem;font-weight:bold;color:#eee">📊 明るさランキング</span>
-              <span class="mock-csv">⬇ CSV</span>
+            <div class="anno-badge" style="top:-6px;right:-4px">③</div>
+            <div class="mock-panel">
+              <div class="mock-panel-header">
+                <div class="mock-panel-title"><span class="icon">📊</span> 明るさランキング</div>
+                <span class="mock-csv-btn">⬇ CSV</span>
+              </div>
+              <div class="mock-panel-body" style="padding:0">
+                <table class="mock-table">
+                  <thead><tr><th>#</th><th>名前</th><th>現在値</th><th>条件</th></tr></thead>
+                  <tbody>
+                    <tr><td class="rank r1">1</td><td class="p-name">田中 あおい</td><td class="p-val">2840 <span class="p-unit">raw</span></td><td><span class="p-memo">窓際・直射日光</span></td></tr>
+                    <tr><td class="rank r2">2</td><td class="p-name">山本 こうた</td><td class="p-val">1950 <span class="p-unit">raw</span></td><td><span class="p-memo">廊下・蛍光灯</span></td></tr>
+                    <tr class="me"><td class="rank r3">3</td><td class="p-name">鈴木 はな</td><td class="p-val">1280 <span class="p-unit">raw</span></td><td><span class="p-memo">教室中央</span></td></tr>
+                    <tr><td class="rank">4</td><td class="p-name">佐藤 りく</td><td class="p-val">890 <span class="p-unit">raw</span></td><td><span class="p-memo">机の下</span></td></tr>
+                    <tr><td class="rank">5</td><td class="p-name">高橋 みなと</td><td class="p-val">420 <span class="p-unit">raw</span></td><td><span class="p-memo">カバンの中</span></td></tr>
+                    <tr><td class="rank">6</td><td class="p-name">中村 さら</td><td class="p-val">193 <span class="p-unit">raw</span></td><td><span class="p-memo">引き出しの中</span></td></tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
-            <table class="mock-table">
-              <thead><tr><th>#</th><th>名前</th><th>値</th><th>条件</th></tr></thead>
-              <tbody>
-                <tr><td class="rank gold">1</td><td>田中 あおい</td><td>2840 raw</td><td>窓際・直射日光</td></tr>
-                <tr><td class="rank silver">2</td><td>山本 こうた</td><td>1950 raw</td><td>廊下・蛍光灯</td></tr>
-                <tr class="me"><td class="rank bronze">3</td><td>鈴木 はな</td><td>1280 raw</td><td>教室中央</td></tr>
-                <tr><td class="rank">4</td><td>佐藤 りく</td><td>890 raw</td><td>机の下</td></tr>
-                <tr><td class="rank">5</td><td>高橋 みなと</td><td>420 raw</td><td>カバンの中</td></tr>
-                <tr><td class="rank">6</td><td>中村 さら</td><td>193 raw</td><td>引き出しの中</td></tr>
-              </tbody>
-            </table>
           </div>
 
-          <!-- Badge ④ -->
-          <div style="position:relative;margin-top:.6rem;background:#252540;border-radius:6px;padding:.5rem">
-            <div class="anno-badge" style="top:-6px;right:-6px">④</div>
-            <div class="mock-label">MY DEVICE</div>
-            <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
-              <span style="color:#eee;font-size:.8rem">鈴木 はな</span>
-              <span style="color:var(--orange);font-weight:bold;font-size:1.1rem">1280 <span style="font-size:.7rem;color:#888">raw</span></span>
-              <span style="color:#888;font-size:.75rem">教室中央</span>
+          <!-- Badge ④ on MY DEVICE -->
+          <div style="position:relative">
+            <div class="anno-badge" style="top:-6px;right:-4px">④</div>
+            <div class="mock-device-bar">
+              <span class="mock-device-label">MY DEVICE</span>
+              <span class="mock-device-divider"></span>
+              <div class="mock-input-group">
+                <span class="mock-input-label">名前</span>
+                <span class="mock-input">鈴木 はな</span>
+              </div>
+              <div class="mock-input-group">
+                <span class="mock-input-label">セッションID</span>
+                <span class="mock-input">CLASS-2025-B</span>
+              </div>
+              <div class="mock-input-group">
+                <span class="mock-input-label">条件メモ</span>
+                <span class="mock-input">教室中央</span>
+              </div>
+              <span class="mock-device-divider"></span>
+              <div class="mock-current-wrap">
+                <span class="mock-current-label">現在値</span>
+                <span class="mock-current-val">1280</span>
+                <span class="mock-current-unit">raw</span>
+              </div>
             </div>
           </div>
         </div>
