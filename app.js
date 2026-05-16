@@ -1,5 +1,6 @@
-// SchooMy 明るさ比較システム v2.0
+// SchooMy 明るさ比較システム v2.1
 // グループ単位のチーム比較 / 時系列グラフを主役に / 全チーム波形を重ねて表示
+// v2.1: グラフ差分更新、異常値フィルタ、接続解除ボタン、初期データ点、個人モード注釈
 
 // Firebase config — gracefully handle missing/invalid config so demo mode still works
 const FIREBASE_CONFIG={apiKey:"AIzaSyAJsJ2gLDgAuvfowjuaRwz9HBLm1s05IP4",authDomain:"schoomy-sensor.firebaseapp.com",databaseURL:"https://schoomy-sensor-default-rtdb.asia-southeast1.firebasedatabase.app",projectId:"schoomy-sensor",storageBucket:"schoomy-sensor.firebasestorage.app",messagingSenderId:"885079688723",appId:"1:885079688723:web:62e5c1a86206914fe921e6"};
@@ -85,10 +86,19 @@ function renderBarChart(entries){
   const labels=entries.map(e=>e.name),data=entries.map(e=>e.current||0),memos=entries.map(e=>e.memo||'');
   // 棒グラフもグループIDに固定色 (時系列グラフと色を一致させる)
   const colors=entries.map(e=>colorFor(e.id));
-  if(barChart)barChart.destroy();
-  barChart=new Chart(ctx,{type:'bar',data:{labels,datasets:[{data,backgroundColor:colors,borderRadius:4,maxBarThickness:36}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{afterLabel:c=>memos[c.dataIndex]?'条件: '+memos[c.dataIndex]:''}}},
-    scales:{x:{ticks:{color:'#6B8180',font:{size:11}},grid:{display:false}},y:{beginAtZero:true,ticks:{color:'#6B8180'},grid:{color:'rgba(58,171,168,0.1)'}}}}});
+  // v2.1: 初回は新規作成、2回目以降はデータ差分更新 (チラつき防止)
+  if(!barChart){
+    barChart=new Chart(ctx,{type:'bar',data:{labels,datasets:[{data,backgroundColor:colors,borderRadius:4,maxBarThickness:36}]},
+      options:{responsive:true,maintainAspectRatio:false,animation:false,plugins:{legend:{display:false},tooltip:{callbacks:{afterLabel:c=>memos[c.dataIndex]?'条件: '+memos[c.dataIndex]:''}}},
+      scales:{x:{ticks:{color:'#6B8180',font:{size:11}},grid:{display:false}},y:{beginAtZero:true,ticks:{color:'#6B8180'},grid:{color:'rgba(58,171,168,0.1)'}}}}});
+  } else {
+    barChart.data.labels=labels;
+    barChart.data.datasets[0].data=data;
+    barChart.data.datasets[0].backgroundColor=colors;
+    // tooltip の memo 参照を最新の memos に差し替える
+    barChart.options.plugins.tooltip.callbacks.afterLabel=c=>memos[c.dataIndex]?'条件: '+memos[c.dataIndex]:'';
+    barChart.update('none');
+  }
 }
 
 function renderTable(entries){
@@ -104,6 +114,7 @@ function renderLineChart(entries){
   const ctx=document.getElementById('lineChart');
   const t0=Date.now()-5*60*1000;
   // 全チームの波形を重ねて表示
+  // 5分より古い点は捨てる (filter は維持)。X軸 min/max は固定しない (序盤1〜2点でも全幅表示)
   const datasets=entries.map(e=>{
     const h=Array.isArray(e.history)?e.history.filter(p=>p.t>=t0):[];
     const c=colorFor(e.id);
@@ -120,53 +131,57 @@ function renderLineChart(entries){
       fill:false
     };
   });
-  if(lineChart)lineChart.destroy();
-  lineChart=new Chart(ctx,{type:'line',data:{datasets},
-    options:{
-      responsive:true,
-      maintainAspectRatio:false,
-      animation:{duration:300},
-      plugins:{
-        legend:{
-          position:'top',
-          align:'start',
-          labels:{
-            color:'#2D3A3A',
-            font:{size:12,weight:'600'},
-            boxWidth:14,
-            boxHeight:14,
-            padding:12,
-            usePointStyle:true,
-            pointStyle:'circle'
+  // v2.1: 初回は新規作成、2回目以降はデータ差分更新 (チラつき防止)
+  if(!lineChart){
+    lineChart=new Chart(ctx,{type:'line',data:{datasets},
+      options:{
+        responsive:true,
+        maintainAspectRatio:false,
+        animation:false,
+        plugins:{
+          legend:{
+            position:'top',
+            align:'start',
+            labels:{
+              color:'#2D3A3A',
+              font:{size:12,weight:'600'},
+              boxWidth:14,
+              boxHeight:14,
+              padding:12,
+              usePointStyle:true,
+              pointStyle:'circle'
+            }
+          },
+          tooltip:{
+            mode:'index',
+            intersect:false,
+            callbacks:{
+              title:items=>items.length?new Date(items[0].parsed.x).toLocaleTimeString('ja-JP'):'',
+              label:c=>c.dataset.label+': '+c.parsed.y+' raw'
+            }
           }
         },
-        tooltip:{
-          mode:'index',
-          intersect:false,
-          callbacks:{
-            title:items=>items.length?new Date(items[0].parsed.x).toLocaleTimeString('ja-JP'):'',
-            label:c=>c.dataset.label+': '+c.parsed.y+' raw'
+        scales:{
+          x:{
+            type:'linear',
+            // v2.1: min/max を固定しない — Chart.js が data に合わせて自動でフィット
+            ticks:{color:'#6B8180',callback:v=>new Date(v).toLocaleTimeString('ja-JP'),maxTicksLimit:6,font:{size:11}},
+            grid:{color:'rgba(58,171,168,0.1)'},
+            title:{display:true,text:'時刻',color:'#6B8180',font:{size:11}}
+          },
+          y:{
+            beginAtZero:true,
+            ticks:{color:'#6B8180',font:{size:11}},
+            grid:{color:'rgba(58,171,168,0.1)'},
+            title:{display:true,text:'明るさ (raw)',color:'#6B8180',font:{size:11}}
           }
-        }
-      },
-      scales:{
-        x:{
-          type:'linear',
-          min:t0,
-          max:Date.now(),
-          ticks:{color:'#6B8180',callback:v=>new Date(v).toLocaleTimeString('ja-JP'),maxTicksLimit:6,font:{size:11}},
-          grid:{color:'rgba(58,171,168,0.1)'},
-          title:{display:true,text:'時刻',color:'#6B8180',font:{size:11}}
-        },
-        y:{
-          beginAtZero:true,
-          ticks:{color:'#6B8180',font:{size:11}},
-          grid:{color:'rgba(58,171,168,0.1)'},
-          title:{display:true,text:'明るさ (raw)',color:'#6B8180',font:{size:11}}
         }
       }
-    }
-  });
+    });
+  } else {
+    lineChart.data.datasets=datasets;
+    lineChart.update('none');
+  }
 }
 
 function renderNotes(obj){
@@ -188,20 +203,58 @@ document.getElementById('noteSubmit').addEventListener('click',()=>{
   document.getElementById('noteText').value='';
 });
 
+// v2.1: シリアル接続をトグル方式に。接続中なら切断する。
+async function disconnectSerial(){
+  try{ if(serialReader){ await serialReader.cancel().catch(()=>{}); try{serialReader.releaseLock()}catch(_){}; serialReader=null; } }catch(e){}
+  try{ if(serialPort){ await serialPort.close().catch(()=>{}); } }catch(e){}
+  serialPort=null;
+  if(serialWriteInterval){clearInterval(serialWriteInterval);serialWriteInterval=null;}
+  if(historyInterval){clearInterval(historyInterval);historyInterval=null;}
+  latestValue=null;
+  const btn=document.getElementById('serialBtn');
+  btn.textContent='🔌 接続';
+  btn.classList.remove('connected');
+  document.getElementById('myVal').textContent='--';
+}
+
 document.getElementById('serialBtn').addEventListener('click',async()=>{
+  // 既に接続中なら切断
+  if(serialPort){await disconnectSerial();return;}
   if(!joined){alert('先にセッションに参加してください');return}
-  if(serialPort)return;
   try{
     serialPort=await navigator.serial.requestPort();
     await serialPort.open({baudRate:9600});
-    const btn=document.getElementById('serialBtn');btn.textContent='🔗 接続中';btn.classList.add('connected');
+    const btn=document.getElementById('serialBtn');btn.textContent='🔗 接続解除';btn.classList.add('connected');
     const dec=new TextDecoderStream();serialPort.readable.pipeTo(dec.writable);
     const reader=dec.readable.getReader();serialReader=reader;let buf='';
-    (async()=>{while(true){const{value,done}=await reader.read();if(done)break;buf+=value;const lines=buf.split('\n');buf=lines.pop();for(const l of lines){const n=parseInt(l.trim(),10);if(!isNaN(n)){latestValue=n;document.getElementById('myVal').textContent=n}}}})();
+    let firstValueWritten=false;
+    (async()=>{
+      while(true){
+        const{value,done}=await reader.read();if(done)break;
+        buf+=value;const lines=buf.split('\n');buf=lines.pop();
+        for(const l of lines){
+          const n=parseInt(l.trim(),10);
+          // v2.1: 光センサーの raw 値は 0〜4095 を想定。範囲外は捨てる。
+          // 連続値からの急変も平滑化 (前値の ±50% 以内に収める)
+          if(!isNaN(n) && n>=0 && n<=4095){
+            if(latestValue===null || Math.abs(n-latestValue) < Math.max(50, latestValue*0.5+30)){
+              const wasNull=(latestValue===null);
+              latestValue=n;
+              document.getElementById('myVal').textContent=n;
+              // v2.1: 接続直後の最初の有効値を history に即時 1点書き込み (グラフ即時表示)
+              if(wasNull && !firstValueWritten && currentSessionId && db){
+                firstValueWritten=true;
+                db.ref('sessions/'+currentSessionId+'/students/'+studentId+'/history').set([{t:Date.now(),v:n}]);
+              }
+            }
+          }
+        }
+      }
+    })();
     serialWriteInterval=setInterval(()=>{if(latestValue!==null&&currentSessionId&&db){db.ref('sessions/'+currentSessionId+'/students/'+studentId+'/current').set(latestValue);db.ref('sessions/'+currentSessionId+'/students/'+studentId+'/updatedAt').set(Date.now())}},1000);
     // history は5秒ごとに記録 (v2.0: 直近5分のグラフ表示に十分な解像度を確保)
     historyInterval=setInterval(()=>{if(latestValue!==null&&currentSessionId&&db){const hr=db.ref('sessions/'+currentSessionId+'/students/'+studentId+'/history');hr.once('value',s=>{let h=s.val()||[];if(!Array.isArray(h))h=Object.values(h);h.push({t:Date.now(),v:latestValue});if(h.length>300)h=h.slice(h.length-300);hr.set(h)})}},5000);
-  }catch(e){console.error('Serial error:',e)}
+  }catch(e){console.error('Serial error:',e);serialPort=null;}
 });
 
 // ===== デモモード =====
