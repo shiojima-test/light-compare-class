@@ -1,3 +1,4 @@
+/* SchooMy 明るさ比較システム v2.0 — 時系列グラフを主役に、チーム比較レイアウト */
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&display=swap');
 :root{
   --teal:#3AABA8;
@@ -52,17 +53,25 @@ main{padding:20px 24px 120px;max-width:1400px;margin:0 auto}
 .summary-unit{font-size:13px;font-weight:400;color:var(--text-muted);margin-left:4px}
 .summary-who{font-size:11px;color:var(--text-muted);margin-top:4px}
 .summary-who span{color:var(--orange);font-weight:700}
-.two-col{display:grid;grid-template-columns:1fr 380px;gap:16px;margin-bottom:16px}
+
+/* v2.0: メイン領域 — 時系列グラフ(大) + 参加チーム一覧 */
+.main-grid{display:grid;grid-template-columns:1fr 400px;gap:16px;margin-bottom:16px}
+.panel-main{display:flex;flex-direction:column}
+.panel-main .panel-body{flex:1;min-height:480px}
+
 .panel{background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;box-shadow:var(--shadow)}
 .panel-header{padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
 .panel-title{font-size:13px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:8px}
 .panel-title .icon{width:20px;height:20px;background:var(--teal);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:11px}
 .panel-body{padding:20px}
+
 .participant-table{width:100%;border-collapse:collapse;font-size:12px}
 .participant-table th{text-align:left;padding:8px 10px;color:var(--text-muted);font-size:10px;letter-spacing:.08em;text-transform:uppercase;border-bottom:1px solid var(--border);font-weight:500}
 .participant-table td{padding:10px;border-bottom:1px solid rgba(58,171,168,0.08);vertical-align:middle}
 .participant-table tr:last-child td{border-bottom:none}
 .participant-table tr:hover td{background:rgba(58,171,168,0.04)}
+.p-color{width:18px;padding-left:10px;padding-right:0}
+.color-dot{display:inline-block;width:10px;height:10px;border-radius:50%;vertical-align:middle}
 .p-rank{font-weight:900;font-size:14px;color:var(--text-muted);width:28px}
 .rank-1-text{color:var(--orange)!important}
 .rank-2-text{color:#b8920a!important}
@@ -72,16 +81,20 @@ main{padding:20px 24px 120px;max-width:1400px;margin:0 auto}
 .p-unit{font-size:9px;color:var(--text-muted)}
 .p-memo{font-size:10px;color:var(--text-muted);background:var(--bg3);padding:2px 6px;border-radius:3px}
 .p-time{font-size:10px;color:var(--text-muted);font-variant-numeric:tabular-nums}
+
+/* v2.0: 下段はランキング(小)＋気づきメモ */
 .bottom-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.bottom-grid .panel-body canvas{max-height:240px}
+
 .my-device-bar{position:fixed;bottom:0;left:0;right:0;background:linear-gradient(180deg,rgba(250,248,243,0) 0%,var(--bg) 20%);padding:0 24px 16px;z-index:50}
 .my-device-inner{max-width:1400px;margin:0 auto;background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:14px 20px;display:flex;align-items:center;gap:16px;box-shadow:0 -4px 24px rgba(0,0,0,0.08)}
 .my-label{font-size:11px;font-weight:700;color:var(--teal);letter-spacing:.08em;text-transform:uppercase;white-space:nowrap}
 .my-device-inner .divider{width:1px;height:32px;background:var(--border);flex-shrink:0}
 .input-group{display:flex;flex-direction:column;gap:3px}
 .input-label{font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em}
-.my-input{background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:13px;padding:6px 10px;outline:none;width:120px}
+.my-input{background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:13px;padding:6px 10px;outline:none;width:140px}
 .my-input:focus{border-color:var(--teal);background:rgba(58,171,168,0.05)}
-.memo-input{width:180px}
+.memo-input{width:200px}
 .connect-btn{background:var(--teal);color:white;border:none;border-radius:8px;padding:9px 18px;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px;transition:background .2s;white-space:nowrap}
 .connect-btn:hover{background:var(--teal-dark)}
 .connect-btn.connected{background:rgba(58,171,168,0.1);color:var(--teal);border:1px solid var(--teal)}
@@ -92,7 +105,7 @@ main{padding:20px 24px 120px;max-width:1400px;margin:0 auto}
 .demo-badge{background:rgba(232,138,10,0.1);border:1px solid rgba(232,138,10,0.25);color:var(--orange);font-size:10px;font-weight:700;padding:4px 10px;border-radius:4px;letter-spacing:.06em}
 .csv-btn{background:transparent;border:1px solid var(--border);color:var(--text-muted);border-radius:6px;padding:5px 12px;font-size:11px;font-family:inherit;cursor:pointer;display:flex;align-items:center;gap:5px;transition:all .2s}
 .csv-btn:hover{border-color:var(--teal);color:var(--teal)}
-.notes-list{max-height:300px;overflow-y:auto}
+.notes-list{max-height:240px;overflow-y:auto}
 .note-item{padding:10px 14px;border-left:3px solid var(--orange);margin-bottom:8px;background:var(--bg);border-radius:0 6px 6px 0}
 .note-meta{font-size:10px;color:var(--text-muted);margin-bottom:4px;display:flex;gap:8px}
 .note-meta .note-author{font-weight:700;color:var(--text)}
@@ -100,7 +113,7 @@ main{padding:20px 24px 120px;max-width:1400px;margin:0 auto}
 .note-form{display:flex;gap:8px;margin-bottom:12px}
 .note-form input,.note-form textarea{background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:12px;padding:6px 10px;outline:none}
 .note-form input:focus,.note-form textarea:focus{border-color:var(--teal)}
-.note-form input{width:80px}
+.note-form input{width:110px}
 .note-form textarea{flex:1;resize:none;height:34px}
 .note-form button{background:var(--teal);color:white;border:none;border-radius:6px;padding:6px 14px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
 .note-form button:hover{background:var(--teal-dark)}
@@ -115,11 +128,15 @@ main{padding:20px 24px 120px;max-width:1400px;margin:0 auto}
 ::-webkit-scrollbar-thumb{background:var(--bg3);border-radius:3px}
 
 /* Responsive: tablet */
+@media(max-width:1024px){
+  .main-grid{grid-template-columns:1fr 340px}
+}
 @media(max-width:900px){
   .summary-grid{grid-template-columns:repeat(2,1fr)}
-  .two-col,.bottom-grid{grid-template-columns:1fr}
+  .main-grid,.bottom-grid{grid-template-columns:1fr}
+  .panel-main .panel-body{min-height:360px}
   .my-device-inner{flex-wrap:wrap;gap:10px;padding:12px 16px}
-  .memo-input{width:140px}
+  .memo-input{width:160px}
   header{padding:0 16px}
   main{padding:16px 16px 140px}
 }
@@ -131,15 +148,17 @@ main{padding:20px 24px 120px;max-width:1400px;margin:0 auto}
   .header-title{font-size:15px}
   .header-right{flex-wrap:wrap;gap:8px;justify-content:flex-start}
   .clock{min-width:auto;text-align:left}
-  main{padding:12px 10px 220px}
+  main{padding:12px 10px 240px}
   .summary-grid{grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
   .summary-value{font-size:24px}
   .summary-card{padding:12px 14px}
-  .two-col,.bottom-grid{grid-template-columns:1fr;gap:12px}
+  .main-grid,.bottom-grid{grid-template-columns:1fr;gap:12px}
+  .panel-main .panel-body{min-height:280px}
   .panel-body{padding:12px}
   .participant-table{font-size:11px}
   .participant-table th{padding:6px 6px;font-size:9px}
   .participant-table td{padding:8px 6px}
+  .p-color{padding-left:6px}
   .p-current{font-size:13px}
   .my-device-bar{padding:0 8px 10px}
   .my-device-inner{flex-direction:column;align-items:stretch;gap:10px;padding:12px 14px;border-radius:12px}
