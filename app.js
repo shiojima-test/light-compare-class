@@ -1,9 +1,15 @@
-// SchooMy 明るさ比較システム v3.0
-// 個人モード中心。共有ボタン押下時のみ Firebase 連携。
+// SchooMy 明るさ比較システム v3.2
+// 個人モード中心。共有モードで送受信。観覧モード(接続せず購読のみ)も常時アクティブ。
 // 描画方針 (wave-gear / wave-lab 準拠):
 //   - シリアル受信 → ローカル配列に即時 push
 //   - requestAnimationFrame ループで chart.data 差し替え + chart.update('none')
 //   - Chart.js インスタンスは destroy せず使い回し (チラつき防止)
+//
+// v3.2 変更点:
+//   - 「観覧モード」追加: ページを開いた時点で自動的に他人を購読開始
+//     接続も共有もしていない PC でも、誰かが共有していれば波形が見える
+//   - onDisconnect().remove() で、ブラウザを閉じたら自動的に sessions から消える
+//   - ヘッダーに状態バッジ (観覧中 / 個人モード / 共有中) を追加
 
 // =============== Firebase ===============
 const FIREBASE_CONFIG={apiKey:"AIzaSyAJsJ2gLDgAuvfowjuaRwz9HBLm1s05IP4",authDomain:"schoomy-sensor.firebaseapp.com",databaseURL:"https://schoomy-sensor-default-rtdb.asia-southeast1.firebasedatabase.app",projectId:"schoomy-sensor",storageBucket:"schoomy-sensor.firebasestorage.app",messagingSenderId:"885079688723",appId:"1:885079688723:web:62e5c1a86206914fe921e6"};
@@ -39,6 +45,8 @@ let othersData={};          // {studentId: {name, memo, recent, updatedAt}}
 let focusedId=null;         // 詳細表示中の id (null = 全員表示)
 
 let studentsRef=null, notesRef=null;
+let othersSubscribed=false; // v3.2: 観覧モード = 起動時に他人購読を常時開始
+let onDisconnectRef=null;   // v3.2: ブラウザ閉じ自動削除のハンドラ
 let lineChart=null;
 
 // グループ色マップ
@@ -54,6 +62,23 @@ function setStatusPill(label, live){
   pill.classList.toggle('live',live);
   pill.querySelector('.pulse').classList.toggle('live',live);
   $('statusText').textContent=label;
+}
+
+// v3.2: モードバッジ (観覧中 / 個人モード / 共有中)
+function updateModeBadge(){
+  const badge=$('modeBadge');
+  if(!badge) return;
+  badge.classList.remove('viewing','personal','sharing');
+  if(shared || demoMode){
+    badge.textContent='共有中';
+    badge.classList.add('sharing');
+  } else if(connected){
+    badge.textContent='個人モード';
+    badge.classList.add('personal');
+  } else {
+    badge.textContent='観覧中';
+    badge.classList.add('viewing');
+  }
 }
 function trimToWindow(arr){
   const cutoff=Date.now()-KEEP_DURATION_MS-5000;
@@ -121,24 +146,24 @@ function computeDatasets(){
     }
   }
 
-  // 個人モード (共有していない): 自分のみ
-  if(!shared){
-    if(localHistory.length===0) return [];
-    return [{label:(myName||'自分'),data:localHistory.filter(p=>p.t>=cutoff).map(p=>({x:p.t,y:p.v})),
-      borderColor:MY_COLOR,backgroundColor:MY_COLOR+'22',borderWidth:2.5,pointRadius:0,tension:0.25,fill:false}];
-  }
-
-  // 共有モード・全員表示
+  // v3.2: 全モード共通で「自分(あれば) + 他人」を重ねる
+  // 観覧中(!connected): 他人のみ
+  // 個人モード(connected, !shared): 自分 + 他人 (背景に薄く)
+  // 共有中: 自分(太線) + 他人
   const datasets=[];
   if(connected || demoMode){
-    datasets.push({label:(myName||'自分')+' (自分)',data:localHistory.filter(p=>p.t>=cutoff).map(p=>({x:p.t,y:p.v})),
-      borderColor:MY_COLOR,backgroundColor:MY_COLOR+'22',borderWidth:3,pointRadius:0,tension:0.25,fill:false});
+    const myBorder = shared ? 3 : 2.5;
+    datasets.push({label:(myName||'自分')+(shared?' (自分)':''),data:localHistory.filter(p=>p.t>=cutoff).map(p=>({x:p.t,y:p.v})),
+      borderColor:MY_COLOR,backgroundColor:MY_COLOR+'22',borderWidth:myBorder,pointRadius:0,tension:0.25,fill:false});
   }
   for(const [id,o] of Object.entries(othersData)){
     if(id===myId) continue;
     const c=colorFor(id);
+    // 個人モード(接続中だが未共有)では他人を半透明で背景に
+    const isBackground = connected && !shared;
     datasets.push({label:(o.name||'名前なし'),data:(o.recent||[]).filter(p=>p.t>=cutoff).map(p=>({x:p.t,y:p.v})),
-      borderColor:c,backgroundColor:c+'22',borderWidth:2,pointRadius:0,tension:0.25,fill:false});
+      borderColor: isBackground ? c+'88' : c, backgroundColor:c+'22',
+      borderWidth: isBackground ? 1.5 : 2, pointRadius:0,tension:0.25,fill:false});
   }
   return datasets;
 }
@@ -207,7 +232,7 @@ function updateSummary(){
 // =============== rAF loop (高頻度描画) ===============
 let rafId=null;
 function tick(){
-  // 描画は接続中 / デモ中 / 他人データがあるとき
+  // v3.2: 観覧モードでも他人がいれば描画。常時 update でもよいが負荷軽減のため条件継続。
   if(connected || demoMode || Object.keys(othersData).length>0){
     updateChart();
     updateSummary();
@@ -222,7 +247,7 @@ async function disconnectSerial(){
   try{ if(serialPort){ await serialPort.close().catch(()=>{}); } }catch(e){}
   serialPort=null;
   if(shared) stopSharing(); // 接続切れたら共有も自動停止
-  setStatusPill('未接続', false);
+  setStatusPill('観覧中', false);
   const btn=$('serialBtn');
   btn.textContent='🔌 接続';
   btn.classList.remove('connected');
@@ -230,6 +255,10 @@ async function disconnectSerial(){
   $('myVal').textContent='--';
   latestValue=null;
   localHistory=[];
+  // v3.2: タイトルを観覧モード文言に。shareArea は他人がいれば残す。
+  $('lineChartTitle').textContent = (Object.keys(othersData).length>0) ? '時系列グラフ — みんなの波形 (観覧中)' : '時系列グラフ — 自分の明るさ波形';
+  refreshShareAreaVisibility();
+  updateModeBadge();
   updateChart();
   updateSummary();
 }
@@ -250,6 +279,9 @@ async function connectSerial(){
     $('shareBtn').style.display='';
     // デモ中ならデモ停止
     if(demoMode) stopDemo();
+    // v3.2: タイトルとバッジ更新
+    $('lineChartTitle').textContent='時系列グラフ — 自分の明るさ波形';
+    updateModeBadge();
 
     const dec=new TextDecoderStream();
     serialPort.readable.pipeTo(dec.writable).catch(()=>{});
@@ -320,6 +352,40 @@ $('modalNameInput').addEventListener('keydown',e=>{
   if(e.key==='Enter') $('modalConfirm').click();
 });
 
+// v3.2: 観覧モード — Firebase が使える環境ならページロード時に常時購読
+function subscribeToOthers(){
+  if(!db || othersSubscribed) return;
+  othersSubscribed=true;
+  studentsRef=db.ref('sessions/'+SESSION_ID+'/students');
+  studentsRef.on('value',snap=>{
+    const all=snap.val()||{};
+    const next={};
+    for(const [id,d] of Object.entries(all)){
+      if(id===myId) continue;
+      next[id]=d;
+    }
+    othersData=next;
+    // 観覧中も含めて他人がいたら参加者エリアを開示
+    refreshShareAreaVisibility();
+    renderParticipants();
+  });
+  notesRef=db.ref('sessions/'+SESSION_ID+'/notes');
+  notesRef.orderByChild('createdAt').limitToLast(10).on('value',s=>renderNotes(s.val()||{}));
+}
+
+function unsubscribeOthers(){
+  if(studentsRef){ studentsRef.off(); studentsRef=null; }
+  if(notesRef){ notesRef.off(); notesRef=null; }
+  othersSubscribed=false;
+}
+
+// v3.2: 観覧中でも他人がいたら shareArea を表示。誰もいなければ畳む。
+function refreshShareAreaVisibility(){
+  const hasOthers = Object.keys(othersData).length > 0;
+  const showArea = shared || demoMode || hasOthers;
+  $('shareArea').style.display = showArea ? '' : 'none';
+}
+
 function startSharing(){
   if(!db){ alert('Firebase に接続できません'); return; }
   shared=true;
@@ -331,25 +397,19 @@ function startSharing(){
   $('noteAuthor').value=myName;
   $('lineChartTitle').textContent='時系列グラフ — 全員の波形';
 
+  // v3.2: 自分のノードに onDisconnect ハンドラを仕込む
+  // (ブラウザ閉じ / タブ閉じ / 通信断で自動的に sessions から削除)
+  onDisconnectRef = db.ref('sessions/'+SESSION_ID+'/students/'+myId);
+  onDisconnectRef.onDisconnect().remove();
+
   // 自分の直近60秒を初回 publish
   publishOwnRecent();
   pushInterval=setInterval(publishOwnRecent, FB_PUSH_INTERVAL_MS);
 
-  // 他人を購読
-  studentsRef=db.ref('sessions/'+SESSION_ID+'/students');
-  studentsRef.on('value',snap=>{
-    const all=snap.val()||{};
-    const next={};
-    for(const [id,d] of Object.entries(all)){
-      if(id===myId) continue;
-      next[id]=d;
-    }
-    othersData=next;
-    renderParticipants();
-  });
-  notesRef=db.ref('sessions/'+SESSION_ID+'/notes');
-  notesRef.orderByChild('createdAt').limitToLast(10).on('value',s=>renderNotes(s.val()||{}));
+  // 他人購読は subscribeToOthers() で既に開始済 (重複させない)
+  if(!othersSubscribed) subscribeToOthers();
 
+  updateModeBadge();
   renderParticipants();
 }
 
@@ -371,15 +431,16 @@ function stopSharing(){
   const sbtn=$('shareBtn');
   sbtn.textContent='👥 共有する';
   sbtn.classList.remove('sharing');
-  $('shareArea').style.display='none';
   $('memoBox').style.display='none';
-  if(studentsRef){ studentsRef.off(); studentsRef=null; }
-  if(notesRef){ notesRef.off(); notesRef=null; }
+  // v3.2: onDisconnect 解除 + 自分のノードを明示的に削除
+  if(onDisconnectRef){ onDisconnectRef.onDisconnect().cancel().catch(()=>{}); onDisconnectRef=null; }
   if(db) db.ref('sessions/'+SESSION_ID+'/students/'+myId).remove().catch(()=>{});
-  othersData={};
+  // v3.2: 他人の購読は維持 (観覧モードに戻る)。停止しない。
   focusedId=null;
   $('backToAllBtn').style.display='none';
-  $('lineChartTitle').textContent='時系列グラフ — 自分の明るさ波形';
+  $('lineChartTitle').textContent = connected ? '時系列グラフ — 自分の明るさ波形' : '時系列グラフ — みんなの波形 (観覧中)';
+  refreshShareAreaVisibility();
+  updateModeBadge();
   updateSummary();
 }
 
@@ -545,6 +606,7 @@ function startDemo(){
   renderNotes({demo1:{name:'教室中央チーム', text:'窓際チームは引き出しチームの約15倍明るかった！', createdAt:now}});
   $('myVal').textContent=localHistory[localHistory.length-1].v;
 
+  updateModeBadge();
   // 連続更新 (300ms ごと)
   demoIntervals.push(setInterval(()=>{
     const n=Date.now();
@@ -572,9 +634,8 @@ function stopDemo(){
   $('demoBadge').style.display='none';
   $('demoBtn').textContent='デモ';
   $('demoBtn').classList.remove('active');
-  setStatusPill('未接続', false);
+  setStatusPill('観覧中', false);
   shared=false;
-  $('shareArea').style.display='none';
   $('shareBtn').style.display='none';
   $('shareBtn').classList.remove('sharing');
   $('shareBtn').textContent='👥 共有する';
@@ -583,10 +644,13 @@ function stopDemo(){
   myMemo='';
   $('myVal').textContent='--';
   localHistory=[];
+  // v3.2: デモ用に詰めた擬似 othersData を消去。Firebase 由来の本物は購読が継続更新する。
   othersData={};
   focusedId=null;
   $('backToAllBtn').style.display='none';
   $('lineChartTitle').textContent='時系列グラフ — 自分の明るさ波形';
+  refreshShareAreaVisibility();
+  updateModeBadge();
   updateSummary();
   updateChart();
 }
@@ -596,4 +660,9 @@ ensureChart();
 updateChart();
 updateSummary();
 renderParticipants();
+updateModeBadge();
+// v3.2: ページロード時に観覧モードを開始 (誰かが共有していれば波形が見える)
+setStatusPill('観覧中', false);
+$('lineChartTitle').textContent='時系列グラフ — 自分の明るさ波形';
+subscribeToOthers();
 tick();

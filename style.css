@@ -1,4 +1,4 @@
-/* SchooMy 明るさ比較システム v3.0 — 個人モード中心 / 共有ボタンで Firebase 連携 */
+/* SchooMy 明るさ比較システム v3.2 — 個人モード中心 / 共有ボタン / 観覧モード自動購読 */
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&display=swap');
 :root{
   --teal:#3AABA8;
@@ -37,6 +37,12 @@ header{background:#FFFFFF;border-bottom:1px solid var(--border);padding:0 24px;h
 .pulse.live{background:var(--teal)}
 @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}
 .clock{font-size:13px;color:var(--text-muted);font-variant-numeric:tabular-nums;min-width:70px;text-align:right}
+
+/* v3.2: モードバッジ (観覧中 / 個人モード / 共有中) */
+.mode-badge{font-size:11px;font-weight:700;padding:4px 11px;border-radius:14px;letter-spacing:.04em;border:1px solid transparent;white-space:nowrap}
+.mode-badge.viewing{background:var(--bg3);color:var(--text-muted);border-color:var(--border)}
+.mode-badge.personal{background:rgba(58,171,168,0.12);color:var(--teal);border-color:rgba(58,171,168,0.35)}
+.mode-badge.sharing{background:rgba(232,138,10,0.12);color:var(--orange);border-color:rgba(232,138,10,0.4)}
 
 main{padding:20px 24px 130px;max-width:1400px;margin:0 auto}
 
