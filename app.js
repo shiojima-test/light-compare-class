@@ -1,15 +1,23 @@
-// SchooMy 明るさ比較システム v3.5
-// 個人モード中心。共有モードで送受信。観覧モード(接続せず購読のみ)も常時アクティブ。
-// 描画方針 (wave-gear / wave-lab 準拠):
-//   - シリアル受信 → rawBuffer に蓄積 → 移動平均 → 50ms throttle で localHistory に push
-//   - requestAnimationFrame ループ内で 50ms throttle 描画 (チラつき/重さ防止)
-//   - Chart.js インスタンスは destroy せず使い回し
+// SchooMy 明るさ比較システム v4.0
+// 3モードのタブ切替 (📈マイ波形 / 🔲グリッド / 🔀重ね合わせ)
+// 計測と全体表示が独立。共有してもモード遷移しない (手動切替)。
+// Firebase は常時購読 — 計測していない先生もモード2/3で全体を見られる。
 //
-// v3.5 変更点:
-//   - 移動平均フィルタ追加 (SMOOTHING_WINDOW=10) — ESP32 側 delay なしでも波形を滑らかに
-//   - 描画スロットル追加 (50ms = 20fps) — 受信頻度とは独立して描画
-//   - localHistory への push も 50ms throttle (ストレージ節約)
-//   - Chart.js datasets: tension 0.4 + cubicInterpolationMode 'monotone' でなめらか
+// v4.0 変更点:
+//   - 3モード切替: my-wave / grid / overlay
+//   - 共有してもモード自動遷移しない (トースト通知で誘導)
+//   - Firebase 常時購読 (個人モード中も他人データを保持)
+//   - studentId を sessionStorage に変更 (2タブテスト = 2ユーザー成立)
+//   - 自分のデータも sharedStudents に含む (filter しない) — 自セルが見える
+//   - グリッドモード: 6面まで 2x3 グリッド (各セルにミニチャート)
+//   - 重ね合わせモード: 共有中全員の波形を1グラフに重ねる
+//   - 詳細表示: グリッドセルタップで全画面1人波形 (✕で戻る)
+//
+// 描画方針 (v3.5 維持):
+//   - シリアル受信 → rawBuffer → 移動平均 → 50ms throttle で localHistory に push
+//   - requestAnimationFrame ループ内で 50ms throttle 描画
+//   - Chart.js インスタンスは destroy せず使い回し (グリッドはセルごと)
+//   - tension 0.4 + cubicInterpolationMode 'monotone' でなめらか
 //
 // v3.4 変更点:
 //   - X軸: 接続中は直近10秒スライド (波形が画面いっぱいに見える)
@@ -49,11 +57,18 @@ const PALETTE=['#E88A0A','#2E8EC4','#c8a030','#5cc8c5','#f5a830','#4aaee0','#a05
 const MY_COLOR='#3AABA8';
 
 // =============== State ===============
-let myId=localStorage.getItem('studentId');
-if(!myId){myId=crypto.randomUUID();localStorage.setItem('studentId',myId)}
+// v4.0: studentId は sessionStorage で per-tab unique にする
+//       (同一ブラウザの2タブで別ユーザーとして共有テストできる)
+let myId=sessionStorage.getItem('studentId');
+if(!myId){myId=crypto.randomUUID();sessionStorage.setItem('studentId',myId)}
 let myName=localStorage.getItem('myName')||'';
 let myPlace=localStorage.getItem('myPlace')||'';
 let myMemo='';
+
+// v4.0: 現在表示モード
+let currentMode = localStorage.getItem('viewMode') || 'my-wave';
+const VALID_MODES = new Set(['my-wave','grid','overlay']);
+if(!VALID_MODES.has(currentMode)) currentMode='my-wave';
 
 let connected=false;
 let shared=false;
@@ -80,7 +95,7 @@ let reviewEndElapsed=0;     // レビュー時の X 軸最大値 (秒)
 let yMaxObservedValue=0;
 let yMaxObservedTime=0;
 
-let othersData={};          // {studentId: {name, memo, recent, updatedAt}}
+let sharedStudents={};          // {studentId: {name, memo, recent, updatedAt}}
 let focusedId=null;         // 詳細表示中の id (null = 全員表示)
 
 let studentsRef=null, notesRef=null;
@@ -129,7 +144,7 @@ function updateChartTitle(){
   if(focusedId){
     let name, place;
     if(focusedId===myId){ name=myName||'自分'; place=myPlace; }
-    else { name=othersData[focusedId]?.name||'名前なし'; place=othersData[focusedId]?.place||othersData[focusedId]?.memo||''; }
+    else { name=sharedStudents[focusedId]?.name||'名前なし'; place=sharedStudents[focusedId]?.place||sharedStudents[focusedId]?.memo||''; }
     title = place ? `時系列グラフ — ${name} (${place}) の波形` : `時系列グラフ — ${name} の波形`;
   } else if(reviewMode){
     const dur = Math.max(0, reviewEndElapsed).toFixed(0);
@@ -139,7 +154,7 @@ function updateChartTitle(){
   } else if(connected){
     title = '時系列グラフ — リアルタイム (直近10秒)';
   } else {
-    title = (Object.keys(othersData).length>0) ? '時系列グラフ — みんなの波形 (観覧中)' : '時系列グラフ — 自分の明るさ波形';
+    title = (Object.keys(sharedStudents).length>0) ? '時系列グラフ — みんなの波形 (観覧中)' : '時系列グラフ — 自分の明るさ波形';
   }
   $('lineChartTitle').textContent = title;
 }
@@ -164,7 +179,7 @@ function chartXRange(){
     return {xMin: 0, xMax: Math.max(LIVE_WINDOW_SEC, reviewEndElapsed)};
   }
   let maxE = currentElapsed();
-  for(const o of Object.values(othersData)){
+  for(const o of Object.values(sharedStudents)){
     if(o && Array.isArray(o.recent) && o.recent.length){
       const last = o.recent[o.recent.length-1].e || 0;
       if(last > maxE) maxE = last;
@@ -200,6 +215,160 @@ function computeYMax(datasets){
 }
 function updateClock(){$('clock').textContent=new Date().toLocaleTimeString('ja-JP')}
 setInterval(updateClock,1000);updateClock();
+
+// v4.0: トースト通知 (3秒で消える)
+let toastHideTimer=null;
+function showToast(msg){
+  const t=$('toast');
+  if(!t) return;
+  t.textContent=msg;
+  t.style.display='block';
+  if(toastHideTimer) clearTimeout(toastHideTimer);
+  toastHideTimer=setTimeout(()=>{ t.style.display='none'; }, 3500);
+}
+
+// v4.0: モード切替
+function setMode(mode){
+  if(!VALID_MODES.has(mode)) return;
+  currentMode=mode;
+  try{ localStorage.setItem('viewMode', mode); }catch(e){}
+  document.querySelectorAll('.mode-tab').forEach(b=>b.classList.toggle('active', b.dataset.mode===mode));
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  if(mode==='my-wave') $('viewMyWave').classList.add('active');
+  else if(mode==='grid') $('viewGrid').classList.add('active');
+  else if(mode==='overlay') $('viewOverlay').classList.add('active');
+  // モード切替直後に即時描画 (rAF まで待たない)
+  drawForCurrentMode(true);
+}
+
+// v4.0: 共有人数バッジ更新
+function updateShareCounts(){
+  const n=Object.keys(sharedStudents).length;
+  $('gridCount').textContent=n;
+  $('overlayCount').textContent=n;
+}
+
+// v4.0: グリッドモード描画
+const gridCharts={}; // {studentId: Chart instance}
+function renderGrid(){
+  const container=$('gridCards');
+  const empty=$('gridEmpty');
+  const entries=Object.entries(sharedStudents);
+  if(entries.length===0){
+    if(empty) empty.style.display='';
+    container.innerHTML='';
+    // 残ったチャートを掃除
+    for(const id of Object.keys(gridCharts)){
+      try{ gridCharts[id].destroy(); }catch(e){}
+      delete gridCharts[id];
+    }
+    return;
+  }
+  if(empty) empty.style.display='none';
+
+  // 既存セルの id を取得して、消えた人を除去
+  const liveIds = new Set(entries.map(([id])=>id));
+  for(const id of Object.keys(gridCharts)){
+    if(!liveIds.has(id)){
+      try{ gridCharts[id].destroy(); }catch(e){}
+      delete gridCharts[id];
+      const oldCell=document.querySelector(`.grid-cell[data-id="${id}"]`);
+      if(oldCell) oldCell.remove();
+    }
+  }
+
+  for(const [id, o] of entries){
+    const c = (id===myId) ? MY_COLOR : colorFor(id);
+    let cell=document.querySelector(`.grid-cell[data-id="${id}"]`);
+    if(!cell){
+      cell=document.createElement('div');
+      cell.className='grid-cell' + (id===myId?' is-me':'');
+      cell.dataset.id=id;
+      cell.style.setProperty('--cell-color', c);
+      cell.innerHTML=`
+        <div class="gc-top">
+          <div class="gc-name">${escapeHtml(o.name||'名前なし')}${id===myId?'<span class="me-tag">自分</span>':''}</div>
+          <div class="gc-place">${escapeHtml(o.place||o.memo||'')}</div>
+        </div>
+        <div class="gc-row">
+          <div class="gc-meta">直近値</div>
+          <div class="gc-cur"><span class="gc-cur-val">--</span><span class="gc-unit">raw</span></div>
+        </div>
+        <div class="gc-chart"><canvas></canvas></div>
+      `;
+      cell.addEventListener('click', ()=>openDetail(id));
+      container.appendChild(cell);
+    }
+    // 値を更新
+    cell.querySelector('.gc-name').innerHTML = escapeHtml(o.name||'名前なし') + (id===myId?'<span class="me-tag">自分</span>':'');
+    cell.querySelector('.gc-place').textContent = o.place||o.memo||'';
+    const last = (Array.isArray(o.recent)&&o.recent.length) ? o.recent[o.recent.length-1].v : '--';
+    cell.querySelector('.gc-cur-val').textContent = last;
+    // チャート
+    let ch=gridCharts[id];
+    if(!ch){
+      const canvas=cell.querySelector('canvas');
+      ch=new Chart(canvas.getContext('2d'),{
+        type:'line',
+        data:{datasets:[{data:[],borderColor:c,backgroundColor:c+'22',borderWidth:2,pointRadius:0,tension:0.4,cubicInterpolationMode:'monotone',fill:false}]},
+        options:{
+          responsive:true, maintainAspectRatio:false, animation:false, parsing:false, normalized:true,
+          plugins:{legend:{display:false},tooltip:{enabled:false}},
+          scales:{
+            x:{type:'linear',min:0,max:LIVE_WINDOW_SEC,display:false},
+            y:{beginAtZero:true,min:0,display:false}
+          }
+        }
+      });
+      gridCharts[id]=ch;
+    }
+    const data=(o.recent||[]).map(p=>({x:p.e,y:p.v}));
+    ch.data.datasets[0].data=data;
+    ch.data.datasets[0].borderColor=c;
+    // X 範囲
+    const maxE=data.length?data[data.length-1].x:0;
+    if(maxE<=LIVE_WINDOW_SEC){ ch.options.scales.x.min=0; ch.options.scales.x.max=LIVE_WINDOW_SEC; }
+    else { ch.options.scales.x.min=maxE-LIVE_WINDOW_SEC; ch.options.scales.x.max=maxE; }
+    // Y は max
+    let maxV=0;
+    for(const pt of data) if(pt.y>maxV) maxV=pt.y;
+    ch.options.scales.y.max = Math.max(MIN_Y_MAX, Math.ceil(maxV*1.2));
+    ch.update('none');
+  }
+}
+
+// v4.0: 詳細表示を開く (グリッドセルクリック時)
+function openDetail(id){
+  focusedId=id;
+  const o = (id===myId) ? {name:myName||'自分', place:myPlace} : sharedStudents[id];
+  const place=o?.place||o?.memo||'';
+  $('detailTitle').textContent = place ? `${o?.name||'名前なし'} (${place}) の波形` : (o?.name||'名前なし')+' の波形';
+  $('detailOverlay').style.display='flex';
+  updateDetailChart();
+}
+function closeDetail(){
+  focusedId=null;
+  $('detailOverlay').style.display='none';
+}
+
+// v4.0: 現在モードに応じた描画
+function drawForCurrentMode(forceRedraw){
+  if(currentMode==='my-wave'){
+    updateMyChart();
+    updateSummary();
+  } else if(currentMode==='grid'){
+    renderGrid();
+  } else if(currentMode==='overlay'){
+    const has=Object.keys(sharedStudents).length>0;
+    $('overlayEmpty').style.display = has ? 'none' : '';
+    $('overlayPanel').style.display = has ? '' : 'none';
+    if(has) updateOverlayChart();
+  }
+  // 詳細オーバーレイが開いていれば常に更新
+  if(focusedId && $('detailOverlay').style.display==='flex'){
+    updateDetailChart();
+  }
+}
 
 // =============== Chart ===============
 function ensureChart(){
@@ -244,53 +413,157 @@ function ensureChart(){
   return lineChart;
 }
 
-function computeDatasets(){
-  // v3.3: 全点を経過時間 e で渡す。Chart.js が x 範囲 (chartXRange) で自動クリップ。
-  // 詳細表示: 1人だけ
-  if(focusedId){
-    if(focusedId===myId){
-      return [{label:(myName||'自分'),data:localHistory.map(p=>({x:p.e,y:p.v})),
-        borderColor:MY_COLOR,backgroundColor:MY_COLOR+'22',borderWidth:2.5,pointRadius:0,tension:0.4,cubicInterpolationMode:'monotone',fill:false}];
-    } else {
-      const o=othersData[focusedId];
-      if(!o) return [];
-      const c=colorFor(focusedId);
-      return [{label:o.name||'名前なし',data:(o.recent||[]).map(p=>({x:p.e,y:p.v})),
-        borderColor:c,backgroundColor:c+'22',borderWidth:2.5,pointRadius:0,tension:0.4,cubicInterpolationMode:'monotone',fill:false}];
-    }
-  }
-
-  // v3.2: 全モード共通で「自分(あれば) + 他人」を重ねる
-  // 観覧中(!connected): 他人のみ
-  // 個人モード(connected, !shared): 自分 + 他人 (背景に薄く)
-  // 共有中: 自分(太線) + 他人
-  const datasets=[];
-  if(connected || demoMode){
-    const myBorder = shared ? 3 : 2.5;
-    datasets.push({label:(myName||'自分')+(shared?' (自分)':''),data:localHistory.map(p=>({x:p.e,y:p.v})),
-      borderColor:MY_COLOR,backgroundColor:MY_COLOR+'22',borderWidth:myBorder,pointRadius:0,tension:0.4,cubicInterpolationMode:'monotone',fill:false});
-  }
-  for(const [id,o] of Object.entries(othersData)){
-    if(id===myId) continue;
-    const c=colorFor(id);
-    // 個人モード(接続中だが未共有)では他人を半透明で背景に
-    const isBackground = connected && !shared;
-    datasets.push({label:(o.name||'名前なし'),data:(o.recent||[]).map(p=>({x:p.e,y:p.v})),
-      borderColor: isBackground ? c+'88' : c, backgroundColor:c+'22',
-      borderWidth: isBackground ? 1.5 : 2, pointRadius:0,tension:0.4,cubicInterpolationMode:'monotone',fill:false});
-  }
-  return datasets;
+// v4.0: マイ波形モードの dataset (自分の localHistory のみ)
+function computeMyDatasets(){
+  if(localHistory.length===0) return [];
+  return [{
+    label: (myName||'自分'),
+    data: localHistory.map(p=>({x:p.e,y:p.v})),
+    borderColor: MY_COLOR,
+    backgroundColor: MY_COLOR+'22',
+    borderWidth: 2.5,
+    pointRadius: 0,
+    tension: 0.4,
+    cubicInterpolationMode: 'monotone',
+    fill: false
+  }];
 }
 
-function updateChart(){
+// v4.0: 重ね合わせモードの datasets (sharedStudents 全員)
+function computeOverlayDatasets(){
+  const out=[];
+  for(const [id,o] of Object.entries(sharedStudents)){
+    const c = (id===myId) ? MY_COLOR : colorFor(id);
+    const label = (o.name||'名前なし') + (o.place?' ('+o.place+')':'') + (id===myId?' (自分)':'');
+    out.push({
+      label,
+      data: (o.recent||[]).map(p=>({x:p.e,y:p.v})),
+      borderColor: c,
+      backgroundColor: c+'22',
+      borderWidth: (id===myId)?3:2,
+      pointRadius: 0,
+      tension: 0.4,
+      cubicInterpolationMode: 'monotone',
+      fill: false
+    });
+  }
+  return out;
+}
+
+// v4.0: 詳細表示モードの datasets (1人のみ)
+function computeDetailDatasets(){
+  if(!focusedId) return [];
+  if(focusedId===myId && localHistory.length>0){
+    return [{
+      label: (myName||'自分'),
+      data: localHistory.map(p=>({x:p.e,y:p.v})),
+      borderColor: MY_COLOR, backgroundColor: MY_COLOR+'22',
+      borderWidth: 2.5, pointRadius: 0, tension: 0.4, cubicInterpolationMode: 'monotone', fill: false
+    }];
+  }
+  const o=sharedStudents[focusedId];
+  if(!o) return [];
+  const c = (focusedId===myId) ? MY_COLOR : colorFor(focusedId);
+  return [{
+    label: o.name||'名前なし',
+    data: (o.recent||[]).map(p=>({x:p.e,y:p.v})),
+    borderColor: c, backgroundColor: c+'22',
+    borderWidth: 2.5, pointRadius: 0, tension: 0.4, cubicInterpolationMode: 'monotone', fill: false
+  }];
+}
+
+// v4.0: マイ波形チャート更新 (自分の localHistory のみ)
+function updateMyChart(){
   const ch=ensureChart();
-  const datasets=computeDatasets();
+  const datasets=computeMyDatasets();
   ch.data.datasets=datasets;
-  // v3.4: X軸は直近10秒スライド (レビュー時は全範囲)
   const {xMin, xMax} = chartXRange();
   ch.options.scales.x.min = xMin;
   ch.options.scales.x.max = xMax;
-  // v3.4: Y軸は max を実データに自動追従 + ヒステリシス
+  ch.options.scales.y.max = computeYMax(datasets);
+  ch.update('none');
+}
+
+// v4.0: 重ね合わせチャート更新
+let overlayChart=null;
+function ensureOverlayChart(){
+  if(overlayChart) return overlayChart;
+  const ctx=$('overlayChart');
+  if(!ctx) return null;
+  overlayChart=new Chart(ctx,{
+    type:'line',
+    data:{datasets:[]},
+    options:{
+      responsive:true, maintainAspectRatio:false, animation:false, parsing:false, normalized:true,
+      plugins:{
+        legend:{position:'top',align:'start',labels:{color:'#2D3A3A',font:{size:12,weight:'600'},boxWidth:14,boxHeight:14,padding:12,usePointStyle:true,pointStyle:'circle'}},
+        tooltip:{mode:'index',intersect:false,callbacks:{
+          title:items=>items.length?('経過 '+items[0].parsed.x.toFixed(1)+'秒'):'',
+          label:c=>c.dataset.label+': '+c.parsed.y+' raw'
+        }}
+      },
+      scales:{
+        x:{type:'linear',min:0,max:60,ticks:{color:'#6B8180',callback:v=>v+'s',maxTicksLimit:7,font:{size:11}},grid:{color:'rgba(58,171,168,0.1)'},title:{display:true,text:'経過時間 (秒)',color:'#6B8180',font:{size:11}}},
+        y:{beginAtZero:true,min:0,ticks:{color:'#6B8180',font:{size:11}},grid:{color:'rgba(58,171,168,0.1)'},title:{display:true,text:'明るさ (raw)',color:'#6B8180',font:{size:11}}}
+      }
+    }
+  });
+  return overlayChart;
+}
+function updateOverlayChart(){
+  const ch=ensureOverlayChart();
+  if(!ch) return;
+  const datasets=computeOverlayDatasets();
+  ch.data.datasets=datasets;
+  // 重ね合わせは sharedStudents の最大 e を基準にスライド
+  let maxE=0;
+  for(const o of Object.values(sharedStudents)){
+    if(o && Array.isArray(o.recent) && o.recent.length){
+      const last=o.recent[o.recent.length-1].e||0;
+      if(last>maxE) maxE=last;
+    }
+  }
+  if(maxE <= LIVE_WINDOW_SEC){ ch.options.scales.x.min=0; ch.options.scales.x.max=LIVE_WINDOW_SEC; }
+  else { ch.options.scales.x.min=maxE-LIVE_WINDOW_SEC; ch.options.scales.x.max=maxE; }
+  ch.options.scales.y.max = computeYMax(datasets);
+  ch.update('none');
+}
+
+// v4.0: 詳細チャート (グリッドセルタップ時)
+let detailChart=null;
+function ensureDetailChart(){
+  if(detailChart) return detailChart;
+  const ctx=$('detailChart');
+  if(!ctx) return null;
+  detailChart=new Chart(ctx,{
+    type:'line',
+    data:{datasets:[]},
+    options:{
+      responsive:true, maintainAspectRatio:false, animation:false, parsing:false, normalized:true,
+      plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false,callbacks:{
+        title:items=>items.length?('経過 '+items[0].parsed.x.toFixed(1)+'秒'):'',
+        label:c=>c.dataset.label+': '+c.parsed.y+' raw'
+      }}},
+      scales:{
+        x:{type:'linear',min:0,max:LIVE_WINDOW_SEC,ticks:{color:'#6B8180',callback:v=>v+'s',maxTicksLimit:7,font:{size:11}},grid:{color:'rgba(58,171,168,0.1)'},title:{display:true,text:'経過時間 (秒)',color:'#6B8180',font:{size:11}}},
+        y:{beginAtZero:true,min:0,ticks:{color:'#6B8180',font:{size:11}},grid:{color:'rgba(58,171,168,0.1)'},title:{display:true,text:'明るさ (raw)',color:'#6B8180',font:{size:11}}}
+      }
+    }
+  });
+  return detailChart;
+}
+function updateDetailChart(){
+  const ch=ensureDetailChart();
+  if(!ch || !focusedId) return;
+  const datasets=computeDetailDatasets();
+  ch.data.datasets=datasets;
+  // 対象データから X 範囲を決定
+  let maxE=0;
+  for(const ds of datasets){
+    for(const pt of ds.data) if(pt.x>maxE) maxE=pt.x;
+  }
+  if(maxE <= LIVE_WINDOW_SEC){ ch.options.scales.x.min=0; ch.options.scales.x.max=LIVE_WINDOW_SEC; }
+  else { ch.options.scales.x.min=maxE-LIVE_WINDOW_SEC; ch.options.scales.x.max=maxE; }
   ch.options.scales.y.max = computeYMax(datasets);
   ch.update('none');
 }
@@ -299,7 +572,7 @@ function updateChart(){
 function updateSummary(){
   let targetHistory=null;
   if(focusedId && focusedId!==myId){
-    targetHistory = othersData[focusedId]?.recent || [];
+    targetHistory = sharedStudents[focusedId]?.recent || [];
   } else {
     targetHistory = localHistory;
   }
@@ -340,26 +613,26 @@ function updateSummary(){
   } else if(shared && focusedId===null){
     // チーム数を表示 (自分 + 他人)
     const myCount=(connected||demoMode)?1:0;
-    const totalCount=myCount + Object.keys(othersData).length;
+    const totalCount=myCount + Object.keys(sharedStudents).length;
     $('sumCount').innerHTML=totalCount+'<span class="summary-unit">チーム</span>';
     $('sumCountLabel').textContent='チーム数';
     $('sumCountSub').textContent='共有中';
   } else {
     $('sumCount').innerHTML=cur+'<span class="summary-unit">raw</span>';
     $('sumCountLabel').textContent='現在値';
-    $('sumCountSub').textContent = (focusedId && focusedId!==myId) ? (othersData[focusedId]?.name||'') : (myName||'自分');
+    $('sumCountSub').textContent = (focusedId && focusedId!==myId) ? (sharedStudents[focusedId]?.name||'') : (myName||'自分');
   }
 }
 
 // =============== rAF loop ===============
 // v3.5: rAF で 60fps で起こされるが、実際の描画は RENDER_INTERVAL (50ms = 20fps) に間引く
+// v4.0: モードに応じて適切な描画関数を呼ぶ
 let rafId=null;
 function tick(){
   const now = performance.now();
   if(now - lastRenderAt >= RENDER_INTERVAL){
-    if(connected || demoMode || reviewMode || Object.keys(othersData).length>0){
-      updateChart();
-      updateSummary();
+    if(connected || demoMode || reviewMode || Object.keys(sharedStudents).length>0){
+      drawForCurrentMode();
     }
     lastRenderAt = now;
   }
@@ -393,9 +666,8 @@ async function disconnectSerial(){
     showReviewControls(false);
     updateChartTitle();
   }
-  refreshShareAreaVisibility();
   updateModeBadge();
-  updateChart();
+  drawForCurrentMode();
   updateSummary();
 }
 
@@ -428,7 +700,7 @@ function exitReviewMode(){
   $('myVal').textContent='--';
   updateChartTitle();
   updateModeBadge();
-  updateChart();
+  drawForCurrentMode();
   updateSummary();
 }
 
@@ -594,24 +866,21 @@ $('modalPlaceInput').addEventListener('keydown',e=>{
 });
 
 // v3.2: 観覧モード — Firebase が使える環境ならページロード時に常時購読
+// v4.0: 起動時から常時購読。自分も sharedStudents に含む (filter しない) ので
+//       同一ブラウザ2タブテストでも双方の波形が見える (studentId は sessionStorage で別)。
 function subscribeToOthers(){
   if(!db || othersSubscribed) return;
   othersSubscribed=true;
   studentsRef=db.ref('sessions/'+SESSION_ID+'/students');
   studentsRef.on('value',snap=>{
     const all=snap.val()||{};
-    const next={};
-    for(const [id,d] of Object.entries(all)){
-      if(id===myId) continue;
-      next[id]=d;
-    }
-    othersData=next;
-    // 観覧中も含めて他人がいたら参加者エリアを開示
-    refreshShareAreaVisibility();
-    renderParticipants();
+    sharedStudents = all || {};
+    updateShareCounts();
+    // 現在表示中のモードに応じて再描画 (即時反映)
+    drawForCurrentMode();
+  },err=>{
+    console.warn('subscribeToOthers error:', err);
   });
-  notesRef=db.ref('sessions/'+SESSION_ID+'/notes');
-  notesRef.orderByChild('createdAt').limitToLast(10).on('value',s=>renderNotes(s.val()||{}));
 }
 
 function unsubscribeOthers(){
@@ -620,25 +889,21 @@ function unsubscribeOthers(){
   othersSubscribed=false;
 }
 
-// v3.2: 観覧中でも他人がいたら shareArea を表示。誰もいなければ畳む。
-function refreshShareAreaVisibility(){
-  const hasOthers = Object.keys(othersData).length > 0;
-  const showArea = shared || demoMode || hasOthers;
-  $('shareArea').style.display = showArea ? '' : 'none';
-}
+// v4.0: shareArea / participantsList の概念は廃止。
+//       後方互換用に空関数として残す (既存呼び出しを温存)。
+function refreshShareAreaVisibility(){ /* v4.0: no-op */ }
+function renderParticipants(){ /* v4.0: グリッドモードで自動描画されるため不要 */ }
 
 function startSharing(){
   if(!db){ alert('Firebase に接続できません'); return; }
   shared=true;
   const sbtn=$('shareBtn');
-  sbtn.textContent='✓ 共有中 (タップで停止)';
+  sbtn.textContent='✓ 共有中 (停止)';
   sbtn.classList.add('sharing');
-  $('shareArea').style.display='';
   $('memoBox').style.display='';
   // v3.3: モーダルで入力した場所をフッター入力欄に反映 (同期)
   $('myMemo').value=myPlace;
   myMemo=myPlace;
-  $('noteAuthor').value=myName;
   updateChartTitle();
 
   // v3.2: 自分のノードに onDisconnect ハンドラを仕込む
@@ -650,11 +915,14 @@ function startSharing(){
   publishOwnRecent();
   pushInterval=setInterval(publishOwnRecent, FB_PUSH_INTERVAL_MS);
 
-  // 他人購読は subscribeToOthers() で既に開始済 (重複させない)
+  // 他人購読は init() で常時起動済 (重複させない)
   if(!othersSubscribed) subscribeToOthers();
 
   updateModeBadge();
-  renderParticipants();
+  // v4.0: 共有してもモード遷移しない。トーストで誘導のみ。
+  if(currentMode==='my-wave'){
+    showToast('共有を開始しました。「🔲 グリッド」「🔀 重ね合わせ」タブで全員の波形が見えます');
+  }
 }
 
 function publishOwnRecent(){
@@ -680,11 +948,8 @@ function stopSharing(){
   // v3.2: onDisconnect 解除 + 自分のノードを明示的に削除
   if(onDisconnectRef){ onDisconnectRef.onDisconnect().cancel().catch(()=>{}); onDisconnectRef=null; }
   if(db) db.ref('sessions/'+SESSION_ID+'/students/'+myId).remove().catch(()=>{});
-  // v3.2: 他人の購読は維持 (観覧モードに戻る)。停止しない。
-  focusedId=null;
-  $('backToAllBtn').style.display='none';
+  // v4.0: 他人の購読は維持 (常時観覧)。モード遷移もしない。
   updateChartTitle();
-  refreshShareAreaVisibility();
   updateModeBadge();
   updateSummary();
 }
@@ -696,101 +961,39 @@ $('myMemo').addEventListener('input',e=>{
   localStorage.setItem('myPlace', myPlace);
 });
 
-// =============== Participants ===============
-function renderParticipants(){
-  const cards=$('participantCards');
-  if(!cards) return;
-  const items=[];
-  if(connected || demoMode){
-    items.push({id:myId, name:(myName||'自分'), suffix:' (自分)', place:myPlace, recent:localHistory, color:MY_COLOR, isMe:true});
-  }
-  for(const [id,o] of Object.entries(othersData)){
-    // v3.3: place を優先、無ければ memo を表示 (旧クライアント互換)
-    const placeText = o.place || o.memo || '';
-    items.push({id, name:(o.name||'名前なし'), suffix:'', place:placeText, recent:(o.recent||[]), color:colorFor(id), isMe:false});
-  }
-  if(items.length===0){
-    cards.innerHTML='<div class="empty-hint">まだ誰も共有していません</div>';
-    return;
-  }
-  cards.innerHTML='';
-  for(const it of items){
-    const last = it.recent.length ? it.recent[it.recent.length-1].v : '--';
-    const card=document.createElement('div');
-    card.className='participant-card' + (focusedId===it.id?' focused':'');
-    card.style.borderLeftColor=it.color;
-    card.innerHTML=`
-      <div class="pc-row">
-        <div class="pc-dot" style="background:${it.color}"></div>
-        <div class="pc-name">${escapeHtml(it.name)}<span class="pc-suffix">${escapeHtml(it.suffix)}</span></div>
-      </div>
-      <div class="pc-val">${last}<span class="pc-unit">raw</span></div>
-      ${it.place?`<div class="pc-memo">📍 ${escapeHtml(it.place)}</div>`:''}
-    `;
-    card.onclick=()=>focusOn(it.id);
-    cards.appendChild(card);
-  }
-}
-
-function focusOn(id){
-  focusedId=id;
-  let name, place;
-  if(id===myId){ name = myName||'自分'; place = myPlace; }
-  else { name = othersData[id]?.name||'名前なし'; place = othersData[id]?.place || othersData[id]?.memo || ''; }
-  // v3.3: タイトルに 場所 を含める
-  updateChartTitle();
-  $('backToAllBtn').style.display='';
-  renderParticipants();
-}
-
-$('backToAllBtn').addEventListener('click',()=>{
-  focusedId=null;
-  updateChartTitle();
-  $('backToAllBtn').style.display='none';
-  renderParticipants();
-});
+// v4.0: 詳細表示オーバーレイ用のクローズハンドラ
+$('detailClose').addEventListener('click', closeDetail);
 
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){
-    if(focusedId!==null){ $('backToAllBtn').click(); }
+    if($('detailOverlay').style.display==='flex'){ closeDetail(); }
     else if($('shareModal').style.display==='flex'){ $('modalCancel').click(); }
   }
 });
 
 // =============== Notes ===============
-function renderNotes(obj){
-  const list=$('notesList');
-  if(!list) return;
-  const notes=Object.values(obj).sort((a,b)=>b.createdAt-a.createdAt);
-  list.innerHTML=notes.map(n=>{
-    return `<div class="note-item">
-      <div class="note-meta"><span class="note-author">${escapeHtml(n.name)}</span><span>${new Date(n.createdAt).toLocaleTimeString('ja-JP')}</span></div>
-      <div class="note-text">${escapeHtml(n.text)}</div>
-    </div>`;
-  }).join('');
-}
-
-$('noteSubmit').addEventListener('click',()=>{
-  if(!shared || !db) return;
-  const a=$('noteAuthor').value.trim() || myName || '名前なし';
-  const t=$('noteText').value.trim();
-  if(!t) return;
-  db.ref('sessions/'+SESSION_ID+'/notes').push({name:a, text:t, createdAt:Date.now()});
-  $('noteText').value='';
-});
+// v4.0: ノート機能は v3.x の遺物。HTML から削除済み。renderNotes は空関数で残置。
+function renderNotes(obj){ /* v4.0: no-op (notes UI removed) */ }
 
 // =============== CSV ===============
 $('csvBtn').addEventListener('click',()=>{
-  // v3.3: CSV は経過秒で出力 (各人の起点からの相対時間で比較可能)
+  // v4.0: 重ね合わせモードの CSV — sharedStudents 全員 (自分含む) を出力
   let csv='﻿名前,場所,経過秒,raw値\n';
-  if(connected || demoMode){
-    const myLabel=myName||'自分';
-    const myPlaceLabel=myPlace||'';
-    for(const p of localHistory){
-      csv += `"${myLabel}","${myPlaceLabel}",${(p.e||0).toFixed(3)},${p.v}\n`;
+  const entries = Object.entries(sharedStudents);
+  if(entries.length===0){
+    // sharedStudents が空でも自分の localHistory があれば出力
+    if(localHistory.length){
+      const myLabel=myName||'自分';
+      const myPlaceLabel=myPlace||'';
+      for(const p of localHistory){
+        csv += `"${myLabel}","${myPlaceLabel}",${(p.e||0).toFixed(3)},${p.v}\n`;
+      }
+    } else {
+      alert('共有データがありません');
+      return;
     }
   }
-  for(const [id,o] of Object.entries(othersData)){
+  for(const [id,o] of entries){
     const placeLabel = o.place || o.memo || '';
     for(const p of (o.recent||[])){
       csv += `"${o.name||'名前なし'}","${placeLabel}",${(p.e||0).toFixed(3)},${p.v}\n`;
@@ -842,48 +1045,52 @@ function startDemo(){
   lastPushAt=0;
   for(let i=0;i<=60;i++) localHistory.push({e: i, v: jitter(1280)});
 
-  // 共有エリアを擬似的に表示 (Firebase は使わない)
+  // v4.0: shared フラグだけ立てる (Firebase は使わない / shareArea も無い)
   shared=true;
-  $('shareArea').style.display='';
   $('shareBtn').style.display='';
-  $('shareBtn').textContent='✓ 共有中 (タップで停止)';
+  $('shareBtn').textContent='✓ 共有中 (停止)';
   $('shareBtn').classList.add('sharing');
   $('memoBox').style.display='';
   $('myMemo').value=myPlace;
-  $('noteAuthor').value=myName;
   updateChartTitle();
 
+  // 自分を sharedStudents に入れる (v4.0: 自分も含めて描画)
+  sharedStudents={};
+  sharedStudents[myId]={name:myName, place:myPlace, recent:localHistory.slice(), startedAt:connectStartedAt, updatedAt:Date.now()};
   // 他チームの履歴 (経過秒 0..60、すこしずつズラして変化感を出す)
-  othersData={};
   DEMO_GROUPS.forEach((g,i)=>{
     if(g.name==='教室中央チーム') return;
     const recent=[];
     for(let k=0;k<=60;k++) recent.push({e: k, v: jitter(g.base)});
-    othersData['demo-'+i]={name:g.name, place:g.memo, recent:recent, startedAt:connectStartedAt, updatedAt:Date.now()};
+    sharedStudents['demo-'+i]={name:g.name, place:g.memo, recent:recent, startedAt:connectStartedAt, updatedAt:Date.now()};
   });
 
-  renderParticipants();
-  renderNotes({demo1:{name:'教室中央チーム', text:'窓際チームは引き出しチームの約15倍明るかった！', createdAt:Date.now()}});
+  updateShareCounts();
   $('myVal').textContent=localHistory[localHistory.length-1].v;
 
   updateModeBadge();
+  drawForCurrentMode();
   // 連続更新 (300ms ごと、経過秒を増やしながら追加)
   demoIntervals.push(setInterval(()=>{
     const e = currentElapsed();
     localHistory.push({e, v: jitter(1280)});
     trimToWindow(localHistory);
     $('myVal').textContent=localHistory[localHistory.length-1].v;
+    // 自分の recent も更新
+    if(sharedStudents[myId]){
+      sharedStudents[myId].recent = localHistory.slice();
+      sharedStudents[myId].updatedAt = Date.now();
+    }
     DEMO_GROUPS.forEach((g,i)=>{
       if(g.name==='教室中央チーム') return;
       const k='demo-'+i;
-      if(!othersData[k]) return;
-      othersData[k].recent.push({e, v: jitter(g.base)});
+      if(!sharedStudents[k]) return;
+      sharedStudents[k].recent.push({e, v: jitter(g.base)});
       // 直近60秒に絞る (e基準)
       const cutoff = e - 60 - 5;
-      while(othersData[k].recent.length>0 && othersData[k].recent[0].e<cutoff) othersData[k].recent.shift();
-      othersData[k].updatedAt=Date.now();
+      while(sharedStudents[k].recent.length>0 && sharedStudents[k].recent[0].e<cutoff) sharedStudents[k].recent.shift();
+      sharedStudents[k].updatedAt=Date.now();
     });
-    renderParticipants();
   }, 300));
 }
 
@@ -910,25 +1117,31 @@ function stopDemo(){
   rawBuffer=[];
   lastPushAt=0;
   connectStartedAt=null;  // v3.3: 経過秒の起点をリセット
-  // v3.2: デモ用に詰めた擬似 othersData を消去。Firebase 由来の本物は購読が継続更新する。
-  othersData={};
+  // v3.2: デモ用に詰めた擬似 sharedStudents を消去。Firebase 由来の本物は購読が継続更新する。
+  sharedStudents={};
   focusedId=null;
-  $('backToAllBtn').style.display='none';
+  $('detailOverlay').style.display='none';
+  updateShareCounts();
   updateChartTitle();
-  refreshShareAreaVisibility();
   updateModeBadge();
   updateSummary();
-  updateChart();
+  drawForCurrentMode(true);
 }
 
 // =============== Init ===============
+// v4.0: モードタブのクリックハンドラ
+document.querySelectorAll('.mode-tab').forEach(btn=>{
+  btn.addEventListener('click', ()=>setMode(btn.dataset.mode));
+});
+
 ensureChart();
-updateChart();
 updateSummary();
-renderParticipants();
 updateModeBadge();
-// v3.2: ページロード時に観覧モードを開始 (誰かが共有していれば波形が見える)
-setStatusPill('観覧中', false);
 updateChartTitle();
+updateShareCounts();
+setStatusPill('観覧中', false);
+setMode(currentMode);
+// v3.2/4.0: ページロード時に観覧モードを開始 (誰かが共有していれば波形が見える)
 subscribeToOthers();
+drawForCurrentMode(true);
 tick();
