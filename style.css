@@ -1,4 +1,4 @@
-/* SchooMy 明るさ比較システム v3.4 — X軸10秒スライド、Y軸自動追従、記録レビューモード追加 */
+/* SchooMy 明るさ比較システム v3.5 — 移動平均フィルタと描画スロットルで滑らかな波形 */
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&display=swap');
 :root{
   --teal:#3AABA8;

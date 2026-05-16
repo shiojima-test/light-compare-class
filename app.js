@@ -1,9 +1,15 @@
-// SchooMy 明るさ比較システム v3.4
+// SchooMy 明るさ比較システム v3.5
 // 個人モード中心。共有モードで送受信。観覧モード(接続せず購読のみ)も常時アクティブ。
 // 描画方針 (wave-gear / wave-lab 準拠):
-//   - シリアル受信 → ローカル配列に即時 push
-//   - requestAnimationFrame ループで chart.data 差し替え + chart.update('none')
-//   - Chart.js インスタンスは destroy せず使い回し (チラつき防止)
+//   - シリアル受信 → rawBuffer に蓄積 → 移動平均 → 50ms throttle で localHistory に push
+//   - requestAnimationFrame ループ内で 50ms throttle 描画 (チラつき/重さ防止)
+//   - Chart.js インスタンスは destroy せず使い回し
+//
+// v3.5 変更点:
+//   - 移動平均フィルタ追加 (SMOOTHING_WINDOW=10) — ESP32 側 delay なしでも波形を滑らかに
+//   - 描画スロットル追加 (50ms = 20fps) — 受信頻度とは独立して描画
+//   - localHistory への push も 50ms throttle (ストレージ節約)
+//   - Chart.js datasets: tension 0.4 + cubicInterpolationMode 'monotone' でなめらか
 //
 // v3.4 変更点:
 //   - X軸: 接続中は直近10秒スライド (波形が画面いっぱいに見える)
@@ -34,6 +40,11 @@ const LIVE_WINDOW_SEC=10;                        // v3.4: ライブ表示の X �
 const FB_PUSH_INTERVAL_MS=1000;                  // 1秒ごとに Firebase へ
 const MIN_Y_MAX=100;                             // Y軸 max の下限
 const Y_HYSTERESIS_MS=5000;                      // v3.4: Y軸max が下がるまでの猶予 (5秒)
+// v3.5: スムージング/スロットル定数 (調整しやすいよう冒頭に集約)
+const SMOOTHING_WINDOW=10;                       // 移動平均のサンプル数 (5にすると反応速、15にすると滑らか)
+const RAW_BUFFER_SIZE=50;                        // 移動平均用 raw 値の保持数
+const RENDER_INTERVAL=50;                        // 描画ループの最小間隔 ms (50ms = 20fps)
+const HISTORY_PUSH_INTERVAL=50;                  // localHistory への push 最小間隔 ms
 const PALETTE=['#E88A0A','#2E8EC4','#c8a030','#5cc8c5','#f5a830','#4aaee0','#a05ec2','#e35c5c','#6dbf6d','#a36df0'];
 const MY_COLOR='#3AABA8';
 
@@ -55,6 +66,11 @@ let connectStartedAt=null;  // v3.3: 接続開始の絶対時刻 (経過秒の�
 let localHistory=[];        // [{e, v}] 直近 60秒分 (e = 接続からの経過秒)
 let latestValue=null;
 let pushInterval=null;      // 共有モード時の FB 書き込みタイマー
+
+// v3.5: スムージング/スロットル用
+let rawBuffer=[];           // 受信した raw 値のリングバッファ (移動平均用)
+let lastPushAt=0;           // 最後に localHistory へ push した時刻
+let lastRenderAt=0;         // 最後に updateChart を回した時刻
 
 // v3.4: 記録レビューモード
 let reviewMode=false;       // 切断後 localHistory を保持して全範囲表示
@@ -234,13 +250,13 @@ function computeDatasets(){
   if(focusedId){
     if(focusedId===myId){
       return [{label:(myName||'自分'),data:localHistory.map(p=>({x:p.e,y:p.v})),
-        borderColor:MY_COLOR,backgroundColor:MY_COLOR+'22',borderWidth:2.5,pointRadius:0,tension:0.25,fill:false}];
+        borderColor:MY_COLOR,backgroundColor:MY_COLOR+'22',borderWidth:2.5,pointRadius:0,tension:0.4,cubicInterpolationMode:'monotone',fill:false}];
     } else {
       const o=othersData[focusedId];
       if(!o) return [];
       const c=colorFor(focusedId);
       return [{label:o.name||'名前なし',data:(o.recent||[]).map(p=>({x:p.e,y:p.v})),
-        borderColor:c,backgroundColor:c+'22',borderWidth:2.5,pointRadius:0,tension:0.25,fill:false}];
+        borderColor:c,backgroundColor:c+'22',borderWidth:2.5,pointRadius:0,tension:0.4,cubicInterpolationMode:'monotone',fill:false}];
     }
   }
 
@@ -252,7 +268,7 @@ function computeDatasets(){
   if(connected || demoMode){
     const myBorder = shared ? 3 : 2.5;
     datasets.push({label:(myName||'自分')+(shared?' (自分)':''),data:localHistory.map(p=>({x:p.e,y:p.v})),
-      borderColor:MY_COLOR,backgroundColor:MY_COLOR+'22',borderWidth:myBorder,pointRadius:0,tension:0.25,fill:false});
+      borderColor:MY_COLOR,backgroundColor:MY_COLOR+'22',borderWidth:myBorder,pointRadius:0,tension:0.4,cubicInterpolationMode:'monotone',fill:false});
   }
   for(const [id,o] of Object.entries(othersData)){
     if(id===myId) continue;
@@ -261,7 +277,7 @@ function computeDatasets(){
     const isBackground = connected && !shared;
     datasets.push({label:(o.name||'名前なし'),data:(o.recent||[]).map(p=>({x:p.e,y:p.v})),
       borderColor: isBackground ? c+'88' : c, backgroundColor:c+'22',
-      borderWidth: isBackground ? 1.5 : 2, pointRadius:0,tension:0.25,fill:false});
+      borderWidth: isBackground ? 1.5 : 2, pointRadius:0,tension:0.4,cubicInterpolationMode:'monotone',fill:false});
   }
   return datasets;
 }
@@ -335,13 +351,17 @@ function updateSummary(){
   }
 }
 
-// =============== rAF loop (高頻度描画) ===============
+// =============== rAF loop ===============
+// v3.5: rAF で 60fps で起こされるが、実際の描画は RENDER_INTERVAL (50ms = 20fps) に間引く
 let rafId=null;
 function tick(){
-  // v3.2: 観覧モードでも他人がいれば描画。v3.4: レビュー中も毎フレーム描画 (静止状態だが軽量)。
-  if(connected || demoMode || reviewMode || Object.keys(othersData).length>0){
-    updateChart();
-    updateSummary();
+  const now = performance.now();
+  if(now - lastRenderAt >= RENDER_INTERVAL){
+    if(connected || demoMode || reviewMode || Object.keys(othersData).length>0){
+      updateChart();
+      updateSummary();
+    }
+    lastRenderAt = now;
   }
   rafId=requestAnimationFrame(tick);
 }
@@ -365,6 +385,8 @@ async function disconnectSerial(){
   } else {
     // 記録ゼロなら通常の観覧モードへ
     localHistory=[];
+    rawBuffer=[];
+    lastPushAt=0;
     connectStartedAt=null;
     $('serialBtn').textContent='🔌 接続';
     $('serialBtn').classList.remove('connected');
@@ -394,6 +416,8 @@ function exitReviewMode(){
   reviewMode=false;
   reviewEndElapsed=0;
   localHistory=[];
+  rawBuffer=[];
+  lastPushAt=0;
   connectStartedAt=null;
   yMaxObservedValue=0; yMaxObservedTime=0;
   $('serialBtn').style.display='';
@@ -426,6 +450,8 @@ async function connectSerial(){
     // v3.3: 接続開始時刻を起点に経過秒を測る
     connectStartedAt = Date.now();
     localHistory = [];
+    rawBuffer = [];
+    lastPushAt = 0;
     setStatusPill('接続中', true);
     const btn=$('serialBtn');
     btn.textContent='🔌 切断';
@@ -452,11 +478,11 @@ async function connectSerial(){
           buf=lines.pop();
           for(const l of lines){
             const n=parseInt(l.trim(),10);
-            // v2.1 由来: 0〜4095 範囲チェック + 急変平滑化 (±50% / ±50 min)
+            // v2.1 由来: 0〜4095 範囲チェック + 急変フィルタ (前値の ±50%+30 以内)
+            // v3.5: 移動平均は onRawSample 内 (rawBuffer + SMOOTHING_WINDOW)
             if(!isNaN(n) && n>=0 && n<=4095){
               if(latestValue===null || Math.abs(n-latestValue) < Math.max(50, latestValue*0.5+30)){
-                latestValue=n;
-                pushSample(n);
+                onRawSample(n);
               }
             }
           }
@@ -470,8 +496,33 @@ async function connectSerial(){
   }
 }
 
+// v3.5: シリアルから受信した raw 値を入口で処理する
+//   rawBuffer に貯め、移動平均で滑らかな値を作る。
+//   localHistory への push は HISTORY_PUSH_INTERVAL ms に1回まで throttle。
+//   描画は別の rAF ループ (tick) が RENDER_INTERVAL ms 間隔で回す。
+function onRawSample(n){
+  rawBuffer.push(n);
+  if(rawBuffer.length > RAW_BUFFER_SIZE) rawBuffer.shift();
+  // 直近 SMOOTHING_WINDOW 点の平均
+  const w = rawBuffer.slice(-SMOOTHING_WINDOW);
+  let s = 0;
+  for(const x of w) s += x;
+  const avg = Math.round(s / w.length);
+  latestValue = avg;
+  // 現在値表示は即時 (体感の遅延を避ける)
+  $('myVal').textContent = avg;
+  // localHistory への push は throttle
+  const now = Date.now();
+  if(now - lastPushAt >= HISTORY_PUSH_INTERVAL){
+    lastPushAt = now;
+    const e = currentElapsed();
+    localHistory.push({e, v: avg});
+    trimToWindow(localHistory);
+  }
+}
+
+// 互換用 (デモ等から直接呼ぶケース) — 経過秒を指定して 1点追加
 function pushSample(v){
-  // v3.3: 経過秒 e を起点に保存
   const e = currentElapsed();
   localHistory.push({e, v});
   trimToWindow(localHistory);
@@ -787,6 +838,8 @@ function startDemo(){
   // v3.3: 自分の履歴を経過秒で初期化 (0..60 の 60 点)
   connectStartedAt = Date.now() - 60*1000; // 60秒前から接続中とみなす
   localHistory=[];
+  rawBuffer=[];
+  lastPushAt=0;
   for(let i=0;i<=60;i++) localHistory.push({e: i, v: jitter(1280)});
 
   // 共有エリアを擬似的に表示 (Firebase は使わない)
@@ -854,6 +907,8 @@ function stopDemo(){
   myPlace=localStorage.getItem('myPlace')||'';
   $('myVal').textContent='--';
   localHistory=[];
+  rawBuffer=[];
+  lastPushAt=0;
   connectStartedAt=null;  // v3.3: 経過秒の起点をリセット
   // v3.2: デモ用に詰めた擬似 othersData を消去。Firebase 由来の本物は購読が継続更新する。
   othersData={};
