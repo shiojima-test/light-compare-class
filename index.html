@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SchooMy 明るさ比較システム v3.2</title>
-<link rel="stylesheet" href="style.css?v=3.2">
+<title>SchooMy 明るさ比較システム v3.3</title>
+<link rel="stylesheet" href="style.css?v=3.3">
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -14,7 +14,7 @@
   <div class="header-left">
     <div class="logo-badge">SchooMy</div>
     <div class="header-title">明るさ<span>比較</span>システム</div>
-    <div class="version-tag">v3.2</div>
+    <div class="version-tag">v3.3</div>
   </div>
   <div class="header-right">
     <div class="mode-badge viewing" id="modeBadge">観覧中</div>
@@ -94,8 +94,8 @@
     <button class="connect-btn" id="serialBtn">🔌 接続</button>
     <button class="share-btn" id="shareBtn" style="display:none">👥 共有する</button>
     <div class="input-group memo-box" id="memoBox" style="display:none">
-      <div class="input-label">条件メモ</div>
-      <input class="my-input memo-input" id="myMemo" placeholder="例: 窓際">
+      <div class="input-label">場所</div>
+      <input class="my-input memo-input" id="myMemo" placeholder="例: 2階窓際">
     </div>
     <div class="my-current">
       <div class="my-current-label">現在値</div>
@@ -109,16 +109,19 @@
 <!-- 共有モーダル -->
 <div class="modal-overlay" id="shareModal" style="display:none">
   <div class="modal">
-    <h3 class="modal-title">名前を入力</h3>
+    <h3 class="modal-title">共有を開始</h3>
     <p class="modal-sub">他の人にも自分の波形が見えるようになります。あとから変更できます。</p>
-    <input type="text" id="modalNameInput" class="modal-input" placeholder="例: 田中">
+    <label class="modal-field-label">名前 <span class="req">必須</span></label>
+    <input type="text" id="modalNameInput" class="modal-input" placeholder="例: 塩島">
+    <label class="modal-field-label">場所 <span class="opt">任意</span></label>
+    <input type="text" id="modalPlaceInput" class="modal-input" placeholder="例: 2階窓際">
     <div class="modal-btns">
       <button class="modal-cancel" id="modalCancel">キャンセル</button>
-      <button class="modal-confirm" id="modalConfirm">共有開始</button>
+      <button class="modal-confirm" id="modalConfirm">共有を開始</button>
     </div>
   </div>
 </div>
 
-<script src="app.js?v=3.2"></script>
+<script src="app.js?v=3.3"></script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-/* SchooMy 明るさ比較システム v3.2 — 個人モード中心 / 共有ボタン / 観覧モード自動購読 */
+/* SchooMy 明るさ比較システム v3.3 — X軸を経過時間ベースに、共有モーダル2項目化 */
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&display=swap');
 :root{
   --teal:#3AABA8;
@@ -152,8 +152,12 @@ main{padding:20px 24px 130px;max-width:1400px;margin:0 auto}
 .modal{background:#fff;border-radius:14px;padding:24px 28px;width:100%;max-width:380px;box-shadow:0 12px 40px rgba(0,0,0,0.2)}
 .modal-title{font-size:17px;font-weight:900;color:var(--text);margin-bottom:8px}
 .modal-sub{font-size:12px;color:var(--text-muted);margin-bottom:14px;line-height:1.5}
-.modal-input{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:15px;padding:10px 12px;outline:none;margin-bottom:16px}
+.modal-field-label{display:block;font-size:11px;font-weight:700;color:var(--text-muted);margin:6px 0 4px;letter-spacing:.04em}
+.modal-field-label .req{font-size:10px;color:var(--red);font-weight:600;margin-left:4px}
+.modal-field-label .opt{font-size:10px;color:var(--text-muted);font-weight:500;margin-left:4px}
+.modal-input{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:15px;padding:10px 12px;outline:none;margin-bottom:10px}
 .modal-input:focus{border-color:var(--teal);background:rgba(58,171,168,0.04)}
+.modal-btns{margin-top:14px}
 .modal-btns{display:flex;gap:8px;justify-content:flex-end}
 .modal-cancel,.modal-confirm{border-radius:8px;padding:9px 18px;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;border:none}
 .modal-cancel{background:var(--bg3);color:var(--text)}

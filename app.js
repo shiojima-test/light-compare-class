@@ -1,15 +1,22 @@
-// SchooMy 明るさ比較システム v3.2
+// SchooMy 明るさ比較システム v3.3
 // 個人モード中心。共有モードで送受信。観覧モード(接続せず購読のみ)も常時アクティブ。
 // 描画方針 (wave-gear / wave-lab 準拠):
 //   - シリアル受信 → ローカル配列に即時 push
 //   - requestAnimationFrame ループで chart.data 差し替え + chart.update('none')
 //   - Chart.js インスタンスは destroy せず使い回し (チラつき防止)
 //
-// v3.2 変更点:
-//   - 「観覧モード」追加: ページを開いた時点で自動的に他人を購読開始
-//     接続も共有もしていない PC でも、誰かが共有していれば波形が見える
-//   - onDisconnect().remove() で、ブラウザを閉じたら自動的に sessions から消える
-//   - ヘッダーに状態バッジ (観覧中 / 個人モード / 共有中) を追加
+// v3.3 変更点 (WAVE LAB 準拠):
+//   - X軸を絶対時刻 → 経過時間(秒) ベースに変更
+//   - 接続開始時刻 connectStartedAt を起点にした e (経過秒) を各点に保存
+//   - 接続直後でも X軸は 0〜60秒の固定枠で必ず表示 (左端に空白ができない)
+//   - 60秒経過後はスライドして直近60秒を表示
+//   - 共有モーダルを「名前 + 場所」の2項目に
+//   - Firebase スキーマに place / startedAt を追加
+// 授業利用シナリオ:
+//   教室A 14:00 接続 → 経過 0秒〜
+//   教室B 14:05 接続 → 経過 0秒〜
+//   両者が共有中なら画面上は両方とも「0〜60秒」の範囲に重なる
+//   → 異なるタイミングで測定した波形を「変化の形」で比較できる
 
 // =============== Firebase ===============
 const FIREBASE_CONFIG={apiKey:"AIzaSyAJsJ2gLDgAuvfowjuaRwz9HBLm1s05IP4",authDomain:"schoomy-sensor.firebaseapp.com",databaseURL:"https://schoomy-sensor-default-rtdb.asia-southeast1.firebasedatabase.app",projectId:"schoomy-sensor",storageBucket:"schoomy-sensor.firebasestorage.app",messagingSenderId:"885079688723",appId:"1:885079688723:web:62e5c1a86206914fe921e6"};
@@ -28,6 +35,7 @@ const MY_COLOR='#3AABA8';
 let myId=localStorage.getItem('studentId');
 if(!myId){myId=crypto.randomUUID();localStorage.setItem('studentId',myId)}
 let myName=localStorage.getItem('myName')||'';
+let myPlace=localStorage.getItem('myPlace')||'';
 let myMemo='';
 
 let connected=false;
@@ -37,7 +45,8 @@ let serialPort=null, serialReader=null;
 let demoIntervals=[];
 let demoRestoreName=null;
 
-let localHistory=[];        // [{t, v}] 直近 ~60秒分
+let connectStartedAt=null;  // v3.3: 接続開始の絶対時刻 (経過秒の起点)
+let localHistory=[];        // [{e, v}] 直近 60秒分 (e = 接続からの経過秒)
 let latestValue=null;
 let pushInterval=null;      // 共有モード時の FB 書き込みタイマー
 
@@ -80,9 +89,30 @@ function updateModeBadge(){
     badge.classList.add('viewing');
   }
 }
+// v3.3: 経過秒 (現在の自分の接続開始からの秒数)。未接続時は 0。
+function currentElapsed(){
+  if(connectStartedAt===null) return 0;
+  return (Date.now() - connectStartedAt) / 1000;
+}
+// v3.3: 直近 KEEP_DURATION (60秒) より古い点を捨てる (e ベース)
 function trimToWindow(arr){
-  const cutoff=Date.now()-KEEP_DURATION_MS-5000;
-  while(arr.length>0 && arr[0].t<cutoff) arr.shift();
+  const cutoff = currentElapsed() - (KEEP_DURATION_MS/1000) - 5;
+  while(arr.length>0 && arr[0].e<cutoff) arr.shift();
+}
+// v3.3: チャート X軸の表示範囲 [xMin, xMax]
+// 自分の経過秒と他人の最大 e の大きい方を基準に "直近60秒" をスライド表示。
+// 起動直後は固定の [0..60] (左端に空白を作らない)。
+function chartXRange(){
+  let maxE = currentElapsed();
+  for(const o of Object.values(othersData)){
+    if(o && Array.isArray(o.recent) && o.recent.length){
+      const last = o.recent[o.recent.length-1].e || 0;
+      if(last > maxE) maxE = last;
+    }
+  }
+  const xMin = Math.max(0, maxE - 60);
+  const xMax = Math.max(60, maxE);
+  return {xMin, xMax};
 }
 function updateClock(){$('clock').textContent=new Date().toLocaleTimeString('ja-JP')}
 setInterval(updateClock,1000);updateClock();
@@ -103,16 +133,19 @@ function ensureChart(){
       plugins:{
         legend:{position:'top',align:'start',labels:{color:'#2D3A3A',font:{size:12,weight:'600'},boxWidth:14,boxHeight:14,padding:12,usePointStyle:true,pointStyle:'circle'}},
         tooltip:{mode:'index',intersect:false,callbacks:{
-          title:items=>items.length?new Date(items[0].parsed.x).toLocaleTimeString('ja-JP'):'',
+          title:items=>items.length?('経過 '+items[0].parsed.x.toFixed(1)+'秒'):'',
           label:c=>c.dataset.label+': '+c.parsed.y+' raw'
         }}
       },
       scales:{
         x:{
+          // v3.3: 経過時間軸 (秒)
           type:'linear',
-          ticks:{color:'#6B8180',callback:v=>new Date(v).toLocaleTimeString('ja-JP'),maxTicksLimit:6,font:{size:11}},
+          min:0,
+          max:60,
+          ticks:{color:'#6B8180',callback:v=>v+'s',maxTicksLimit:7,font:{size:11}},
           grid:{color:'rgba(58,171,168,0.1)'},
-          title:{display:true,text:'時刻',color:'#6B8180',font:{size:11}}
+          title:{display:true,text:'経過時間 (秒)',color:'#6B8180',font:{size:11}}
         },
         y:{
           beginAtZero:true,
@@ -128,20 +161,17 @@ function ensureChart(){
 }
 
 function computeDatasets(){
-  const cutoff=Date.now()-KEEP_DURATION_MS;
-
+  // v3.3: 全点を経過時間 e で渡す。Chart.js が x 範囲 (chartXRange) で自動クリップ。
   // 詳細表示: 1人だけ
   if(focusedId){
     if(focusedId===myId){
-      const pts=localHistory.filter(p=>p.t>=cutoff);
-      return [{label:(myName||'自分'),data:pts.map(p=>({x:p.t,y:p.v})),
+      return [{label:(myName||'自分'),data:localHistory.map(p=>({x:p.e,y:p.v})),
         borderColor:MY_COLOR,backgroundColor:MY_COLOR+'22',borderWidth:2.5,pointRadius:0,tension:0.25,fill:false}];
     } else {
       const o=othersData[focusedId];
       if(!o) return [];
       const c=colorFor(focusedId);
-      const pts=(o.recent||[]).filter(p=>p.t>=cutoff);
-      return [{label:o.name||'名前なし',data:pts.map(p=>({x:p.t,y:p.v})),
+      return [{label:o.name||'名前なし',data:(o.recent||[]).map(p=>({x:p.e,y:p.v})),
         borderColor:c,backgroundColor:c+'22',borderWidth:2.5,pointRadius:0,tension:0.25,fill:false}];
     }
   }
@@ -153,7 +183,7 @@ function computeDatasets(){
   const datasets=[];
   if(connected || demoMode){
     const myBorder = shared ? 3 : 2.5;
-    datasets.push({label:(myName||'自分')+(shared?' (自分)':''),data:localHistory.filter(p=>p.t>=cutoff).map(p=>({x:p.t,y:p.v})),
+    datasets.push({label:(myName||'自分')+(shared?' (自分)':''),data:localHistory.map(p=>({x:p.e,y:p.v})),
       borderColor:MY_COLOR,backgroundColor:MY_COLOR+'22',borderWidth:myBorder,pointRadius:0,tension:0.25,fill:false});
   }
   for(const [id,o] of Object.entries(othersData)){
@@ -161,7 +191,7 @@ function computeDatasets(){
     const c=colorFor(id);
     // 個人モード(接続中だが未共有)では他人を半透明で背景に
     const isBackground = connected && !shared;
-    datasets.push({label:(o.name||'名前なし'),data:(o.recent||[]).filter(p=>p.t>=cutoff).map(p=>({x:p.t,y:p.v})),
+    datasets.push({label:(o.name||'名前なし'),data:(o.recent||[]).map(p=>({x:p.e,y:p.v})),
       borderColor: isBackground ? c+'88' : c, backgroundColor:c+'22',
       borderWidth: isBackground ? 1.5 : 2, pointRadius:0,tension:0.25,fill:false});
   }
@@ -172,6 +202,10 @@ function updateChart(){
   const ch=ensureChart();
   const datasets=computeDatasets();
   ch.data.datasets=datasets;
+  // v3.3: X軸を経過時間ベースでスライド
+  const {xMin, xMax} = chartXRange();
+  ch.options.scales.x.min = xMin;
+  ch.options.scales.x.max = xMax;
   // Y軸 auto-scale (max + 20% 余白、最低 MIN_Y_MAX)
   let maxY=0;
   for(const ds of datasets){
@@ -192,8 +226,9 @@ function updateSummary(){
   } else {
     targetHistory = localHistory;
   }
-  const cutoff=Date.now()-KEEP_DURATION_MS;
-  const pts=targetHistory.filter(p=>p.t>=cutoff);
+  // v3.3: targetHistory には既に 60秒分しか入っていないのでフィルタは不要
+  // (送信側 publishOwnRecent / pushSample / trimToWindow で既に直近60秒に絞られる)
+  const pts=targetHistory;
   if(pts.length===0){
     $('sumMax').innerHTML='--<span class="summary-unit">raw</span>';
     $('sumAvg').innerHTML='--<span class="summary-unit">raw</span>';
@@ -255,6 +290,7 @@ async function disconnectSerial(){
   $('myVal').textContent='--';
   latestValue=null;
   localHistory=[];
+  connectStartedAt=null;  // v3.3: 経過秒の起点をリセット
   // v3.2: タイトルを観覧モード文言に。shareArea は他人がいれば残す。
   $('lineChartTitle').textContent = (Object.keys(othersData).length>0) ? '時系列グラフ — みんなの波形 (観覧中)' : '時系列グラフ — 自分の明るさ波形';
   refreshShareAreaVisibility();
@@ -272,6 +308,9 @@ async function connectSerial(){
     serialPort = await navigator.serial.requestPort();
     await serialPort.open({baudRate:9600});
     connected = true;
+    // v3.3: 接続開始時刻を起点に経過秒を測る
+    connectStartedAt = Date.now();
+    localHistory = [];
     setStatusPill('接続中', true);
     const btn=$('serialBtn');
     btn.textContent='🔌 切断';
@@ -317,8 +356,9 @@ async function connectSerial(){
 }
 
 function pushSample(v){
-  const t=Date.now();
-  localHistory.push({t,v});
+  // v3.3: 経過秒 e を起点に保存
+  const e = currentElapsed();
+  localHistory.push({e, v});
   trimToWindow(localHistory);
   $('myVal').textContent=v;
 }
@@ -332,6 +372,7 @@ $('serialBtn').addEventListener('click',()=>{
 $('shareBtn').addEventListener('click',()=>{
   if(!shared){
     $('modalNameInput').value=myName;
+    $('modalPlaceInput').value=myPlace;
     $('shareModal').style.display='flex';
     setTimeout(()=>$('modalNameInput').focus(),50);
   } else {
@@ -344,11 +385,16 @@ $('modalConfirm').addEventListener('click',()=>{
   const name=$('modalNameInput').value.trim();
   if(!name){ alert('名前を入力してください'); return; }
   myName=name;
+  myPlace=$('modalPlaceInput').value.trim();
   localStorage.setItem('myName', myName);
+  localStorage.setItem('myPlace', myPlace);
   $('shareModal').style.display='none';
   startSharing();
 });
 $('modalNameInput').addEventListener('keydown',e=>{
+  if(e.key==='Enter') $('modalPlaceInput').focus();
+});
+$('modalPlaceInput').addEventListener('keydown',e=>{
   if(e.key==='Enter') $('modalConfirm').click();
 });
 
@@ -394,6 +440,9 @@ function startSharing(){
   sbtn.classList.add('sharing');
   $('shareArea').style.display='';
   $('memoBox').style.display='';
+  // v3.3: モーダルで入力した場所をフッター入力欄に反映 (同期)
+  $('myMemo').value=myPlace;
+  myMemo=myPlace;
   $('noteAuthor').value=myName;
   $('lineChartTitle').textContent='時系列グラフ — 全員の波形';
 
@@ -415,12 +464,13 @@ function startSharing(){
 
 function publishOwnRecent(){
   if(!shared || !db) return;
-  const cutoff=Date.now()-KEEP_DURATION_MS;
-  const recent=localHistory.filter(p=>p.t>=cutoff);
+  // v3.3: localHistory は既に直近60秒分しかない (trimToWindow で管理)
   db.ref('sessions/'+SESSION_ID+'/students/'+myId).set({
     name: myName,
+    place: myPlace,
     memo: myMemo,
-    recent: recent,
+    startedAt: connectStartedAt,    // 起点 (絶対時刻ms)
+    recent: localHistory.slice(),    // [{e, v}] 経過秒+値
     updatedAt: Date.now()
   });
 }
@@ -444,8 +494,12 @@ function stopSharing(){
   updateSummary();
 }
 
-// memo input
-$('myMemo').addEventListener('input',e=>{ myMemo=e.target.value; });
+// memo / place input — v3.3 はメモ欄を「場所」の同期欄として使う (モーダルと連動)
+$('myMemo').addEventListener('input',e=>{
+  myMemo=e.target.value;
+  myPlace=e.target.value;  // v3.3: メモ欄 = 場所欄 (UI簡素化)
+  localStorage.setItem('myPlace', myPlace);
+});
 
 // =============== Participants ===============
 function renderParticipants(){
@@ -453,10 +507,12 @@ function renderParticipants(){
   if(!cards) return;
   const items=[];
   if(connected || demoMode){
-    items.push({id:myId, name:(myName||'自分'), suffix:' (自分)', memo:myMemo, recent:localHistory, color:MY_COLOR, isMe:true});
+    items.push({id:myId, name:(myName||'自分'), suffix:' (自分)', place:myPlace, recent:localHistory, color:MY_COLOR, isMe:true});
   }
   for(const [id,o] of Object.entries(othersData)){
-    items.push({id, name:(o.name||'名前なし'), suffix:'', memo:(o.memo||''), recent:(o.recent||[]), color:colorFor(id), isMe:false});
+    // v3.3: place を優先、無ければ memo を表示 (旧クライアント互換)
+    const placeText = o.place || o.memo || '';
+    items.push({id, name:(o.name||'名前なし'), suffix:'', place:placeText, recent:(o.recent||[]), color:colorFor(id), isMe:false});
   }
   if(items.length===0){
     cards.innerHTML='<div class="empty-hint">まだ誰も共有していません</div>';
@@ -474,7 +530,7 @@ function renderParticipants(){
         <div class="pc-name">${escapeHtml(it.name)}<span class="pc-suffix">${escapeHtml(it.suffix)}</span></div>
       </div>
       <div class="pc-val">${last}<span class="pc-unit">raw</span></div>
-      ${it.memo?`<div class="pc-memo">${escapeHtml(it.memo)}</div>`:''}
+      ${it.place?`<div class="pc-memo">📍 ${escapeHtml(it.place)}</div>`:''}
     `;
     card.onclick=()=>focusOn(it.id);
     cards.appendChild(card);
@@ -483,8 +539,11 @@ function renderParticipants(){
 
 function focusOn(id){
   focusedId=id;
-  let name = (id===myId) ? (myName||'自分') : (othersData[id]?.name||'名前なし');
-  $('lineChartTitle').textContent=`${name} の波形`;
+  let name, place;
+  if(id===myId){ name = myName||'自分'; place = myPlace; }
+  else { name = othersData[id]?.name||'名前なし'; place = othersData[id]?.place || othersData[id]?.memo || ''; }
+  // v3.3: タイトルに 場所 を含める
+  $('lineChartTitle').textContent = place ? `${name} (${place}) の波形` : `${name} の波形`;
   $('backToAllBtn').style.display='';
   renderParticipants();
 }
@@ -527,16 +586,19 @@ $('noteSubmit').addEventListener('click',()=>{
 
 // =============== CSV ===============
 $('csvBtn').addEventListener('click',()=>{
-  let csv='﻿名前,時刻,raw値,メモ\n';
+  // v3.3: CSV は経過秒で出力 (各人の起点からの相対時間で比較可能)
+  let csv='﻿名前,場所,経過秒,raw値\n';
   if(connected || demoMode){
     const myLabel=myName||'自分';
+    const myPlaceLabel=myPlace||'';
     for(const p of localHistory){
-      csv += `"${myLabel}",${new Date(p.t).toISOString()},${p.v},"${myMemo||''}"\n`;
+      csv += `"${myLabel}","${myPlaceLabel}",${(p.e||0).toFixed(3)},${p.v}\n`;
     }
   }
   for(const [id,o] of Object.entries(othersData)){
+    const placeLabel = o.place || o.memo || '';
     for(const p of (o.recent||[])){
-      csv += `"${o.name||'名前なし'}",${new Date(p.t).toISOString()},${p.v},"${o.memo||''}"\n`;
+      csv += `"${o.name||'名前なし'}","${placeLabel}",${(p.e||0).toFixed(3)},${p.v}\n`;
     }
   }
   const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
@@ -572,15 +634,16 @@ function startDemo(){
   $('demoBtn').classList.add('active');
   setStatusPill('デモ実行中', true);
 
-  // デモ用に自分の名前/メモを仮設定 (LocalStorage は触らない)
+  // デモ用に自分の名前/場所を仮設定 (LocalStorage は触らない)
   demoRestoreName=myName;
   myName='教室中央チーム';
+  myPlace='教室中央';
   myMemo='教室中央';
 
-  // 自分の履歴を初期化
-  const now=Date.now();
+  // v3.3: 自分の履歴を経過秒で初期化 (0..60 の 60 点)
+  connectStartedAt = Date.now() - 60*1000; // 60秒前から接続中とみなす
   localHistory=[];
-  for(let i=60;i>=0;i--) localHistory.push({t:now-i*1000, v:jitter(1280)});
+  for(let i=0;i<=60;i++) localHistory.push({e: i, v: jitter(1280)});
 
   // 共有エリアを擬似的に表示 (Firebase は使わない)
   shared=true;
@@ -589,37 +652,39 @@ function startDemo(){
   $('shareBtn').textContent='✓ 共有中 (タップで停止)';
   $('shareBtn').classList.add('sharing');
   $('memoBox').style.display='';
-  $('myMemo').value=myMemo;
+  $('myMemo').value=myPlace;
   $('noteAuthor').value=myName;
   $('lineChartTitle').textContent='時系列グラフ — 全員の波形';
 
-  // 他チームの履歴を生成
+  // 他チームの履歴 (経過秒 0..60、すこしずつズラして変化感を出す)
   othersData={};
   DEMO_GROUPS.forEach((g,i)=>{
     if(g.name==='教室中央チーム') return;
     const recent=[];
-    for(let k=60;k>=0;k--) recent.push({t:now-k*1000, v:jitter(g.base)});
-    othersData['demo-'+i]={name:g.name, memo:g.memo, recent:recent, updatedAt:now};
+    for(let k=0;k<=60;k++) recent.push({e: k, v: jitter(g.base)});
+    othersData['demo-'+i]={name:g.name, place:g.memo, recent:recent, startedAt:connectStartedAt, updatedAt:Date.now()};
   });
 
   renderParticipants();
-  renderNotes({demo1:{name:'教室中央チーム', text:'窓際チームは引き出しチームの約15倍明るかった！', createdAt:now}});
+  renderNotes({demo1:{name:'教室中央チーム', text:'窓際チームは引き出しチームの約15倍明るかった！', createdAt:Date.now()}});
   $('myVal').textContent=localHistory[localHistory.length-1].v;
 
   updateModeBadge();
-  // 連続更新 (300ms ごと)
+  // 連続更新 (300ms ごと、経過秒を増やしながら追加)
   demoIntervals.push(setInterval(()=>{
-    const n=Date.now();
-    localHistory.push({t:n, v:jitter(1280)});
+    const e = currentElapsed();
+    localHistory.push({e, v: jitter(1280)});
     trimToWindow(localHistory);
     $('myVal').textContent=localHistory[localHistory.length-1].v;
     DEMO_GROUPS.forEach((g,i)=>{
       if(g.name==='教室中央チーム') return;
       const k='demo-'+i;
       if(!othersData[k]) return;
-      othersData[k].recent.push({t:n, v:jitter(g.base)});
-      trimToWindow(othersData[k].recent);
-      othersData[k].updatedAt=n;
+      othersData[k].recent.push({e, v: jitter(g.base)});
+      // 直近60秒に絞る (e基準)
+      const cutoff = e - 60 - 5;
+      while(othersData[k].recent.length>0 && othersData[k].recent[0].e<cutoff) othersData[k].recent.shift();
+      othersData[k].updatedAt=Date.now();
     });
     renderParticipants();
   }, 300));
@@ -642,8 +707,10 @@ function stopDemo(){
   $('memoBox').style.display='none';
   $('myMemo').value='';
   myMemo='';
+  myPlace=localStorage.getItem('myPlace')||'';
   $('myVal').textContent='--';
   localHistory=[];
+  connectStartedAt=null;  // v3.3: 経過秒の起点をリセット
   // v3.2: デモ用に詰めた擬似 othersData を消去。Firebase 由来の本物は購読が継続更新する。
   othersData={};
   focusedId=null;
