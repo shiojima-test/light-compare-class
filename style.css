@@ -1,4 +1,4 @@
-/* SchooMy 明るさ比較システム v3.3 — X軸を経過時間ベースに、共有モーダル2項目化 */
+/* SchooMy 明るさ比較システム v3.4 — X軸10秒スライド、Y軸自動追従、記録レビューモード追加 */
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&display=swap');
 :root{
   --teal:#3AABA8;
@@ -43,6 +43,7 @@ header{background:#FFFFFF;border-bottom:1px solid var(--border);padding:0 24px;h
 .mode-badge.viewing{background:var(--bg3);color:var(--text-muted);border-color:var(--border)}
 .mode-badge.personal{background:rgba(58,171,168,0.12);color:var(--teal);border-color:rgba(58,171,168,0.35)}
 .mode-badge.sharing{background:rgba(232,138,10,0.12);color:var(--orange);border-color:rgba(232,138,10,0.4)}
+.mode-badge.review{background:rgba(123,94,167,0.12);color:#7B5EA7;border-color:rgba(123,94,167,0.4)}
 
 main{padding:20px 24px 130px;max-width:1400px;margin:0 auto}
 
@@ -118,6 +119,15 @@ main{padding:20px 24px 130px;max-width:1400px;margin:0 auto}
 .share-btn{background:var(--orange);color:white;border:none;border-radius:8px;padding:9px 18px;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px;transition:background .2s;white-space:nowrap}
 .share-btn:hover{background:#c97208}
 .share-btn.sharing{background:rgba(232,138,10,0.12);color:var(--orange);border:1px solid var(--orange)}
+
+/* v3.4: レビューモード用ボタン群 */
+.review-controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.restart-btn{background:#7B5EA7;color:white;border:none;border-radius:8px;padding:9px 16px;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;transition:background .2s}
+.restart-btn:hover{background:#634a87}
+.review-csv-btn{background:transparent;color:var(--orange);border:1.5px solid var(--orange);border-radius:8px;padding:8px 16px;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;transition:all .2s}
+.review-csv-btn:hover{background:var(--orange);color:white}
+.reconnect-btn{background:var(--teal);color:white;border:none;border-radius:8px;padding:9px 16px;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;transition:background .2s}
+.reconnect-btn:hover{background:var(--teal-dark)}
 
 .my-current{display:flex;flex-direction:column;align-items:center;gap:2px;margin-left:auto}
 .my-current-label{font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em}

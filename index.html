@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SchooMy 明るさ比較システム v3.3</title>
-<link rel="stylesheet" href="style.css?v=3.3">
+<title>SchooMy 明るさ比較システム v3.4</title>
+<link rel="stylesheet" href="style.css?v=3.4">
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -14,7 +14,7 @@
   <div class="header-left">
     <div class="logo-badge">SchooMy</div>
     <div class="header-title">明るさ<span>比較</span>システム</div>
-    <div class="version-tag">v3.3</div>
+    <div class="version-tag">v3.4</div>
   </div>
   <div class="header-right">
     <div class="mode-badge viewing" id="modeBadge">観覧中</div>
@@ -93,6 +93,12 @@
     <div class="divider"></div>
     <button class="connect-btn" id="serialBtn">🔌 接続</button>
     <button class="share-btn" id="shareBtn" style="display:none">👥 共有する</button>
+    <!-- v3.4: レビューモード用ボタン群 (切断後に表示) -->
+    <div class="review-controls" id="reviewControls" style="display:none">
+      <button class="restart-btn" id="restartBtn">🔄 やり直す</button>
+      <button class="review-csv-btn" id="reviewCsvBtn">⬇ CSV</button>
+      <button class="reconnect-btn" id="reconnectBtn">🔌 再接続</button>
+    </div>
     <div class="input-group memo-box" id="memoBox" style="display:none">
       <div class="input-label">場所</div>
       <input class="my-input memo-input" id="myMemo" placeholder="例: 2階窓際">
@@ -122,6 +128,6 @@
   </div>
 </div>
 
-<script src="app.js?v=3.3"></script>
+<script src="app.js?v=3.4"></script>
 </body>
 </html>

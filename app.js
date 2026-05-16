@@ -1,22 +1,26 @@
-// SchooMy 明るさ比較システム v3.3
+// SchooMy 明るさ比較システム v3.4
 // 個人モード中心。共有モードで送受信。観覧モード(接続せず購読のみ)も常時アクティブ。
 // 描画方針 (wave-gear / wave-lab 準拠):
 //   - シリアル受信 → ローカル配列に即時 push
 //   - requestAnimationFrame ループで chart.data 差し替え + chart.update('none')
 //   - Chart.js インスタンスは destroy せず使い回し (チラつき防止)
 //
+// v3.4 変更点:
+//   - X軸: 接続中は直近10秒スライド (波形が画面いっぱいに見える)
+//   - Y軸: 0 固定 + max を実データに自動追従、5秒猶予のヒステリシス
+//   - 記録レビューモード追加: 切断後も localHistory を保持し全範囲表示
+//   - レビュー専用ボタン [🔄 やり直す] [⬇ CSV] [🔌 再接続] を追加
+//   - グラフタイトルがモード別に動的変化
+//
 // v3.3 変更点 (WAVE LAB 準拠):
 //   - X軸を絶対時刻 → 経過時間(秒) ベースに変更
 //   - 接続開始時刻 connectStartedAt を起点にした e (経過秒) を各点に保存
-//   - 接続直後でも X軸は 0〜60秒の固定枠で必ず表示 (左端に空白ができない)
-//   - 60秒経過後はスライドして直近60秒を表示
 //   - 共有モーダルを「名前 + 場所」の2項目に
 //   - Firebase スキーマに place / startedAt を追加
 // 授業利用シナリオ:
 //   教室A 14:00 接続 → 経過 0秒〜
 //   教室B 14:05 接続 → 経過 0秒〜
-//   両者が共有中なら画面上は両方とも「0〜60秒」の範囲に重なる
-//   → 異なるタイミングで測定した波形を「変化の形」で比較できる
+//   両者が共有中なら画面上は両方とも「直近10秒」の範囲に重なる
 
 // =============== Firebase ===============
 const FIREBASE_CONFIG={apiKey:"AIzaSyAJsJ2gLDgAuvfowjuaRwz9HBLm1s05IP4",authDomain:"schoomy-sensor.firebaseapp.com",databaseURL:"https://schoomy-sensor-default-rtdb.asia-southeast1.firebasedatabase.app",projectId:"schoomy-sensor",storageBucket:"schoomy-sensor.firebasestorage.app",messagingSenderId:"885079688723",appId:"1:885079688723:web:62e5c1a86206914fe921e6"};
@@ -25,9 +29,11 @@ try{firebase.initializeApp(FIREBASE_CONFIG);db=firebase.database()}catch(e){cons
 
 // =============== 定数 ===============
 const SESSION_ID='light-class';                 // 共有時は全員ここに集まる
-const KEEP_DURATION_MS=60*1000;                  // 60秒保持
+const KEEP_DURATION_MS=60*1000;                  // 60秒保持 (Firebase送信側)
+const LIVE_WINDOW_SEC=10;                        // v3.4: ライブ表示の X 軸幅 (秒)
 const FB_PUSH_INTERVAL_MS=1000;                  // 1秒ごとに Firebase へ
 const MIN_Y_MAX=100;                             // Y軸 max の下限
+const Y_HYSTERESIS_MS=5000;                      // v3.4: Y軸max が下がるまでの猶予 (5秒)
 const PALETTE=['#E88A0A','#2E8EC4','#c8a030','#5cc8c5','#f5a830','#4aaee0','#a05ec2','#e35c5c','#6dbf6d','#a36df0'];
 const MY_COLOR='#3AABA8';
 
@@ -49,6 +55,14 @@ let connectStartedAt=null;  // v3.3: 接続開始の絶対時刻 (経過秒の�
 let localHistory=[];        // [{e, v}] 直近 60秒分 (e = 接続からの経過秒)
 let latestValue=null;
 let pushInterval=null;      // 共有モード時の FB 書き込みタイマー
+
+// v3.4: 記録レビューモード
+let reviewMode=false;       // 切断後 localHistory を保持して全範囲表示
+let reviewEndElapsed=0;     // レビュー時の X 軸最大値 (秒)
+
+// v3.4: Y 軸 max ヒステリシス (5秒猶予)
+let yMaxObservedValue=0;
+let yMaxObservedTime=0;
 
 let othersData={};          // {studentId: {name, memo, recent, updatedAt}}
 let focusedId=null;         // 詳細表示中の id (null = 全員表示)
@@ -73,12 +87,15 @@ function setStatusPill(label, live){
   $('statusText').textContent=label;
 }
 
-// v3.2: モードバッジ (観覧中 / 個人モード / 共有中)
+// v3.2: モードバッジ (観覧中 / 個人モード / 共有中 / v3.4: 記録レビュー)
 function updateModeBadge(){
   const badge=$('modeBadge');
   if(!badge) return;
-  badge.classList.remove('viewing','personal','sharing');
-  if(shared || demoMode){
+  badge.classList.remove('viewing','personal','sharing','review');
+  if(reviewMode){
+    badge.textContent='📼 記録レビュー';
+    badge.classList.add('review');
+  } else if(shared || demoMode){
     badge.textContent='共有中';
     badge.classList.add('sharing');
   } else if(connected){
@@ -89,20 +106,47 @@ function updateModeBadge(){
     badge.classList.add('viewing');
   }
 }
+
+// v3.4: モード別グラフタイトル
+function updateChartTitle(){
+  let title;
+  if(focusedId){
+    let name, place;
+    if(focusedId===myId){ name=myName||'自分'; place=myPlace; }
+    else { name=othersData[focusedId]?.name||'名前なし'; place=othersData[focusedId]?.place||othersData[focusedId]?.memo||''; }
+    title = place ? `時系列グラフ — ${name} (${place}) の波形` : `時系列グラフ — ${name} の波形`;
+  } else if(reviewMode){
+    const dur = Math.max(0, reviewEndElapsed).toFixed(0);
+    title = `時系列グラフ — 記録レビュー (全 ${dur}秒)`;
+  } else if(shared || demoMode){
+    title = '時系列グラフ — リアルタイム (全員)';
+  } else if(connected){
+    title = '時系列グラフ — リアルタイム (直近10秒)';
+  } else {
+    title = (Object.keys(othersData).length>0) ? '時系列グラフ — みんなの波形 (観覧中)' : '時系列グラフ — 自分の明るさ波形';
+  }
+  $('lineChartTitle').textContent = title;
+}
 // v3.3: 経過秒 (現在の自分の接続開始からの秒数)。未接続時は 0。
 function currentElapsed(){
   if(connectStartedAt===null) return 0;
   return (Date.now() - connectStartedAt) / 1000;
 }
 // v3.3: 直近 KEEP_DURATION (60秒) より古い点を捨てる (e ベース)
+// v3.4: レビュー中は trim しない (全記録を保持)
 function trimToWindow(arr){
+  if(reviewMode) return;
   const cutoff = currentElapsed() - (KEEP_DURATION_MS/1000) - 5;
   while(arr.length>0 && arr[0].e<cutoff) arr.shift();
 }
-// v3.3: チャート X軸の表示範囲 [xMin, xMax]
-// 自分の経過秒と他人の最大 e の大きい方を基準に "直近60秒" をスライド表示。
-// 起動直後は固定の [0..60] (左端に空白を作らない)。
+// v3.4: チャート X軸の表示範囲
+// - レビューモード: [0, 記録の最終 elapsed] (全範囲)
+// - 接続中 / 観覧中: 直近 LIVE_WINDOW_SEC (10秒) スライド
+// - elapsed <= 10 のときは [0, 10] 固定 (左端に空白を作らない)
 function chartXRange(){
+  if(reviewMode){
+    return {xMin: 0, xMax: Math.max(LIVE_WINDOW_SEC, reviewEndElapsed)};
+  }
   let maxE = currentElapsed();
   for(const o of Object.values(othersData)){
     if(o && Array.isArray(o.recent) && o.recent.length){
@@ -110,9 +154,33 @@ function chartXRange(){
       if(last > maxE) maxE = last;
     }
   }
-  const xMin = Math.max(0, maxE - 60);
-  const xMax = Math.max(60, maxE);
-  return {xMin, xMax};
+  if(maxE <= LIVE_WINDOW_SEC) return {xMin: 0, xMax: LIVE_WINDOW_SEC};
+  return {xMin: maxE - LIVE_WINDOW_SEC, xMax: maxE};
+}
+
+// v3.4: Y軸 max を実データから決定。下がるときは5秒猶予 (ヒステリシス)
+function computeYMax(datasets){
+  let maxV = 0;
+  for(const ds of datasets){
+    for(const pt of ds.data){
+      if(pt.y > maxV) maxV = pt.y;
+    }
+  }
+  const now = Date.now();
+  if(reviewMode){
+    // レビューはデータが変わらないのでヒステリシス不要、即時計算
+    return Math.max(MIN_Y_MAX, Math.ceil(maxV * 1.2));
+  }
+  if(maxV >= yMaxObservedValue){
+    // 上昇は即時反映
+    yMaxObservedValue = maxV;
+    yMaxObservedTime = now;
+  } else if(now - yMaxObservedTime > Y_HYSTERESIS_MS){
+    // 5秒以上経って下回ったので、現在の max を採用 (緩やかに縮小)
+    yMaxObservedValue = maxV;
+    yMaxObservedTime = now;
+  }
+  return Math.max(MIN_Y_MAX, Math.ceil(yMaxObservedValue * 1.2));
 }
 function updateClock(){$('clock').textContent=new Date().toLocaleTimeString('ja-JP')}
 setInterval(updateClock,1000);updateClock();
@@ -202,19 +270,12 @@ function updateChart(){
   const ch=ensureChart();
   const datasets=computeDatasets();
   ch.data.datasets=datasets;
-  // v3.3: X軸を経過時間ベースでスライド
+  // v3.4: X軸は直近10秒スライド (レビュー時は全範囲)
   const {xMin, xMax} = chartXRange();
   ch.options.scales.x.min = xMin;
   ch.options.scales.x.max = xMax;
-  // Y軸 auto-scale (max + 20% 余白、最低 MIN_Y_MAX)
-  let maxY=0;
-  for(const ds of datasets){
-    for(const pt of ds.data){
-      if(pt.y>maxY) maxY=pt.y;
-    }
-  }
-  const yMax = maxY > 0 ? Math.max(MIN_Y_MAX, Math.ceil(maxY*1.2/50)*50) : MIN_Y_MAX;
-  ch.options.scales.y.max=yMax;
+  // v3.4: Y軸は max を実データに自動追従 + ヒステリシス
+  ch.options.scales.y.max = computeYMax(datasets);
   ch.update('none');
 }
 
@@ -246,11 +307,21 @@ function updateSummary(){
   }
   const avg=Math.round(sum/pts.length);
   const cur=pts[pts.length-1].v;
+  // v3.4: ラベルをモード別に変更
+  const scope = reviewMode ? '記録全体' : '直近10秒〜60秒';
   $('sumMax').innerHTML=mx+'<span class="summary-unit">raw</span>';
   $('sumAvg').innerHTML=avg+'<span class="summary-unit">raw</span>';
   $('sumMin').innerHTML=mn+'<span class="summary-unit">raw</span>';
+  $('sumMaxLabel').textContent=scope;
+  $('sumAvgLabel').textContent=scope;
+  $('sumMinLabel').textContent=scope;
 
-  if(shared && focusedId===null){
+  if(reviewMode){
+    // v3.4: レビュー中は現在値の代わりに記録の最後の値を表示
+    $('sumCount').innerHTML=cur+'<span class="summary-unit">raw</span>';
+    $('sumCountLabel').textContent='終了時の値';
+    $('sumCountSub').textContent=`全 ${reviewEndElapsed.toFixed(1)} 秒`;
+  } else if(shared && focusedId===null){
     // チーム数を表示 (自分 + 他人)
     const myCount=(connected||demoMode)?1:0;
     const totalCount=myCount + Object.keys(othersData).length;
@@ -267,8 +338,8 @@ function updateSummary(){
 // =============== rAF loop (高頻度描画) ===============
 let rafId=null;
 function tick(){
-  // v3.2: 観覧モードでも他人がいれば描画。常時 update でもよいが負荷軽減のため条件継続。
-  if(connected || demoMode || Object.keys(othersData).length>0){
+  // v3.2: 観覧モードでも他人がいれば描画。v3.4: レビュー中も毎フレーム描画 (静止状態だが軽量)。
+  if(connected || demoMode || reviewMode || Object.keys(othersData).length>0){
     updateChart();
     updateSummary();
   }
@@ -277,26 +348,70 @@ function tick(){
 
 // =============== Serial ===============
 async function disconnectSerial(){
+  const hadHistory = localHistory.length > 0;
+  const endElapsed = currentElapsed();
   connected=false;
   try{ if(serialReader){ await serialReader.cancel().catch(()=>{}); try{serialReader.releaseLock()}catch(_){}; serialReader=null; } }catch(e){}
   try{ if(serialPort){ await serialPort.close().catch(()=>{}); } }catch(e){}
   serialPort=null;
-  if(shared) stopSharing(); // 接続切れたら共有も自動停止
-  setStatusPill('観覧中', false);
-  const btn=$('serialBtn');
-  btn.textContent='🔌 接続';
-  btn.classList.remove('connected');
+  if(shared) stopSharing(); // 接続切れたら共有も自動停止 (Firebase からも自分のノードを削除)
+  setStatusPill(hadHistory ? '記録レビュー中' : '観覧中', false);
   $('shareBtn').style.display='none';
   $('myVal').textContent='--';
   latestValue=null;
-  localHistory=[];
-  connectStartedAt=null;  // v3.3: 経過秒の起点をリセット
-  // v3.2: タイトルを観覧モード文言に。shareArea は他人がいれば残す。
-  $('lineChartTitle').textContent = (Object.keys(othersData).length>0) ? '時系列グラフ — みんなの波形 (観覧中)' : '時系列グラフ — 自分の明るさ波形';
+  // v3.4: 記録があればレビューモードに入る (localHistory を保持して全範囲表示)
+  if(hadHistory){
+    enterReviewMode(endElapsed);
+  } else {
+    // 記録ゼロなら通常の観覧モードへ
+    localHistory=[];
+    connectStartedAt=null;
+    $('serialBtn').textContent='🔌 接続';
+    $('serialBtn').classList.remove('connected');
+    showReviewControls(false);
+    updateChartTitle();
+  }
   refreshShareAreaVisibility();
   updateModeBadge();
   updateChart();
   updateSummary();
+}
+
+// v3.4: レビューモードに入る (記録は保持、全範囲表示)
+function enterReviewMode(endElapsed){
+  reviewMode=true;
+  reviewEndElapsed=endElapsed;
+  // ボタン群を「やり直す / CSV / 再接続」に切り替え
+  $('serialBtn').style.display='none';
+  showReviewControls(true);
+  // ヒステリシスは止めて即時 Y 計算
+  yMaxObservedValue=0; yMaxObservedTime=0;
+  updateChartTitle();
+}
+
+// v3.4: レビューを終了 (やり直す / 再接続が呼び出す)
+function exitReviewMode(){
+  reviewMode=false;
+  reviewEndElapsed=0;
+  localHistory=[];
+  connectStartedAt=null;
+  yMaxObservedValue=0; yMaxObservedTime=0;
+  $('serialBtn').style.display='';
+  $('serialBtn').textContent='🔌 接続';
+  $('serialBtn').classList.remove('connected');
+  showReviewControls(false);
+  setStatusPill('観覧中', false);
+  $('myVal').textContent='--';
+  updateChartTitle();
+  updateModeBadge();
+  updateChart();
+  updateSummary();
+}
+
+// レビュー用ボタン群の表示切替
+function showReviewControls(show){
+  const el=$('reviewControls');
+  if(el) el.style.display = show ? '' : 'none';
 }
 
 async function connectSerial(){
@@ -319,7 +434,7 @@ async function connectSerial(){
     // デモ中ならデモ停止
     if(demoMode) stopDemo();
     // v3.2: タイトルとバッジ更新
-    $('lineChartTitle').textContent='時系列グラフ — 自分の明るさ波形';
+    updateChartTitle();
     updateModeBadge();
 
     const dec=new TextDecoderStream();
@@ -366,6 +481,35 @@ function pushSample(v){
 $('serialBtn').addEventListener('click',()=>{
   if(connected){ disconnectSerial(); }
   else { connectSerial(); }
+});
+
+// v3.4: レビューボタン群
+$('restartBtn').addEventListener('click',()=>{
+  if(!confirm('記録をクリアしてやり直しますか？')) return;
+  exitReviewMode();
+});
+$('reconnectBtn').addEventListener('click',()=>{
+  exitReviewMode();
+  // 即時で新規接続フローへ
+  connectSerial();
+});
+$('reviewCsvBtn').addEventListener('click',()=>{
+  if(localHistory.length===0){ alert('記録データがありません'); return; }
+  const name=myName||'自分';
+  const place=myPlace||'';
+  let csv='﻿名前,場所,経過秒,raw値,絶対時刻\n';
+  for(const p of localHistory){
+    const absMs = (connectStartedAt||0) + p.e*1000;
+    const isoT = new Date(absMs).toISOString();
+    csv += `"${name}","${place}",${p.e.toFixed(3)},${p.v},${isoT}\n`;
+  }
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a');
+  const d=new Date();
+  const ds=d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0')+'_'+String(d.getHours()).padStart(2,'0')+String(d.getMinutes()).padStart(2,'0');
+  a.href=URL.createObjectURL(blob);
+  a.download=`light-compare-review-${ds}.csv`;
+  a.click();
 });
 
 // =============== Sharing ===============
@@ -444,7 +588,7 @@ function startSharing(){
   $('myMemo').value=myPlace;
   myMemo=myPlace;
   $('noteAuthor').value=myName;
-  $('lineChartTitle').textContent='時系列グラフ — 全員の波形';
+  updateChartTitle();
 
   // v3.2: 自分のノードに onDisconnect ハンドラを仕込む
   // (ブラウザ閉じ / タブ閉じ / 通信断で自動的に sessions から削除)
@@ -488,7 +632,7 @@ function stopSharing(){
   // v3.2: 他人の購読は維持 (観覧モードに戻る)。停止しない。
   focusedId=null;
   $('backToAllBtn').style.display='none';
-  $('lineChartTitle').textContent = connected ? '時系列グラフ — 自分の明るさ波形' : '時系列グラフ — みんなの波形 (観覧中)';
+  updateChartTitle();
   refreshShareAreaVisibility();
   updateModeBadge();
   updateSummary();
@@ -543,14 +687,14 @@ function focusOn(id){
   if(id===myId){ name = myName||'自分'; place = myPlace; }
   else { name = othersData[id]?.name||'名前なし'; place = othersData[id]?.place || othersData[id]?.memo || ''; }
   // v3.3: タイトルに 場所 を含める
-  $('lineChartTitle').textContent = place ? `${name} (${place}) の波形` : `${name} の波形`;
+  updateChartTitle();
   $('backToAllBtn').style.display='';
   renderParticipants();
 }
 
 $('backToAllBtn').addEventListener('click',()=>{
   focusedId=null;
-  $('lineChartTitle').textContent = shared ? '時系列グラフ — 全員の波形' : '時系列グラフ — 自分の明るさ波形';
+  updateChartTitle();
   $('backToAllBtn').style.display='none';
   renderParticipants();
 });
@@ -654,7 +798,7 @@ function startDemo(){
   $('memoBox').style.display='';
   $('myMemo').value=myPlace;
   $('noteAuthor').value=myName;
-  $('lineChartTitle').textContent='時系列グラフ — 全員の波形';
+  updateChartTitle();
 
   // 他チームの履歴 (経過秒 0..60、すこしずつズラして変化感を出す)
   othersData={};
@@ -715,7 +859,7 @@ function stopDemo(){
   othersData={};
   focusedId=null;
   $('backToAllBtn').style.display='none';
-  $('lineChartTitle').textContent='時系列グラフ — 自分の明るさ波形';
+  updateChartTitle();
   refreshShareAreaVisibility();
   updateModeBadge();
   updateSummary();
@@ -730,6 +874,6 @@ renderParticipants();
 updateModeBadge();
 // v3.2: ページロード時に観覧モードを開始 (誰かが共有していれば波形が見える)
 setStatusPill('観覧中', false);
-$('lineChartTitle').textContent='時系列グラフ — 自分の明るさ波形';
+updateChartTitle();
 subscribeToOthers();
 tick();
