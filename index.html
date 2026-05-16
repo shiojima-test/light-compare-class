@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SchooMy 明るさ比較システム v2.1</title>
-<link rel="stylesheet" href="style.css?v=2.1">
+<title>SchooMy 明るさ比較システム v3.0</title>
+<link rel="stylesheet" href="style.css?v=3.0">
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -14,71 +14,88 @@
   <div class="header-left">
     <div class="logo-badge">SchooMy</div>
     <div class="header-title">明るさ<span>比較</span>システム</div>
-    <div class="version-tag">v2.1</div>
+    <div class="version-tag">v3.0</div>
   </div>
   <div class="header-right">
-    <div class="status-pill" id="statusPill"><div class="pulse"></div><span id="statusText">待機中</span></div>
-    <div class="session-code" id="sessionCodeDisp">---</div>
+    <div class="status-pill" id="statusPill"><div class="pulse"></div><span id="statusText">未接続</span></div>
     <div class="clock" id="clock"></div>
     <a href="guide.html" class="demo-btn" style="text-decoration:none">📖 ガイド</a>
     <button class="demo-btn" id="demoBtn">デモ</button>
   </div>
 </header>
+
 <main>
+  <!-- サマリー (常時表示) -->
   <div class="summary-grid">
-    <div class="summary-card max"><div class="summary-label">最大値</div><div class="summary-value" id="sumMax">--<span class="summary-unit">raw</span></div><div class="summary-who" id="sumMaxWho"></div></div>
-    <div class="summary-card avg"><div class="summary-label">平均値</div><div class="summary-value" id="sumAvg">--<span class="summary-unit">raw</span></div><div class="summary-who" id="sumAvgWho"></div></div>
-    <div class="summary-card min"><div class="summary-label">最小値</div><div class="summary-value" id="sumMin">--<span class="summary-unit">raw</span></div><div class="summary-who" id="sumMinWho"></div></div>
-    <div class="summary-card count"><div class="summary-label">チーム数</div><div class="summary-value" id="sumCount">0<span class="summary-unit">チーム</span></div><div class="summary-who" id="sumUpdated">最終更新: --</div></div>
-  </div>
-  <!-- メイン: 時系列グラフ(大) + 参加チーム一覧 -->
-  <div class="main-grid">
-    <div class="panel panel-main">
-      <div class="panel-header"><div class="panel-title"><div class="icon">📈</div>時系列グラフ — 全チームの明るさ波形</div></div>
-      <div class="panel-body"><canvas id="lineChart" height="420"></canvas></div>
+    <div class="summary-card max">
+      <div class="summary-label">最大値</div>
+      <div class="summary-value" id="sumMax">--<span class="summary-unit">raw</span></div>
+      <div class="summary-who" id="sumMaxLabel">直近60秒</div>
     </div>
-    <div class="panel">
-      <div class="panel-header"><div class="panel-title"><div class="icon">👥</div>参加チーム</div></div>
-      <div class="panel-body" style="padding:0;max-height:460px;overflow-y:auto">
-        <table class="participant-table">
-          <thead><tr><th></th><th>#</th><th>グループ名</th><th>現在値</th><th>条件</th><th>更新</th></tr></thead>
-          <tbody id="participantBody"></tbody>
-        </table>
+    <div class="summary-card avg">
+      <div class="summary-label">平均値</div>
+      <div class="summary-value" id="sumAvg">--<span class="summary-unit">raw</span></div>
+      <div class="summary-who" id="sumAvgLabel">直近60秒</div>
+    </div>
+    <div class="summary-card min">
+      <div class="summary-label">最小値</div>
+      <div class="summary-value" id="sumMin">--<span class="summary-unit">raw</span></div>
+      <div class="summary-who" id="sumMinLabel">直近60秒</div>
+    </div>
+    <div class="summary-card count">
+      <div class="summary-label" id="sumCountLabel">現在値</div>
+      <div class="summary-value" id="sumCount">--<span class="summary-unit">raw</span></div>
+      <div class="summary-who" id="sumCountSub">接続するとライブ</div>
+    </div>
+  </div>
+
+  <!-- メインの時系列グラフ (全幅) -->
+  <div class="panel panel-main panel-full">
+    <div class="panel-header">
+      <div class="panel-title"><div class="icon">📈</div><span id="lineChartTitle">時系列グラフ — 自分の明るさ波形</span></div>
+      <div class="panel-header-actions">
+        <button class="back-btn" id="backToAllBtn" style="display:none">✕ 全員に戻る</button>
       </div>
     </div>
+    <div class="panel-body chart-body"><canvas id="lineChart"></canvas></div>
   </div>
-  <!-- サブ: ランキング(小) + 気づきメモ -->
-  <div class="bottom-grid">
-    <div class="panel">
-      <div class="panel-header">
-        <div class="panel-title"><div class="icon">📊</div>明るさランキング</div>
-        <button class="csv-btn" id="csvBtn">⬇ CSV</button>
-      </div>
-      <div class="panel-body"><canvas id="barChart" height="200"></canvas></div>
-    </div>
-    <div class="panel">
-      <div class="panel-header"><div class="panel-title"><div class="icon">💡</div>気づきメモ</div></div>
-      <div class="panel-body">
-        <div class="note-form" id="noteForm">
-          <input type="text" id="noteAuthor" placeholder="グループ名">
-          <textarea id="noteText" placeholder="気づいたことを書こう..."></textarea>
-          <button id="noteSubmit">送信</button>
+
+  <!-- 共有モード時のみ表示: 参加者一覧 + 気づきメモ -->
+  <div id="shareArea" style="display:none">
+    <div class="bottom-grid">
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title"><div class="icon">👥</div>参加者 <span class="hint">タップで詳細表示</span></div>
+          <button class="csv-btn" id="csvBtn">⬇ CSV</button>
         </div>
-        <div class="notes-list" id="notesList"></div>
+        <div class="panel-body"><div class="participant-cards" id="participantCards"></div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><div class="panel-title"><div class="icon">💡</div>気づきメモ</div></div>
+        <div class="panel-body">
+          <div class="note-form">
+            <input type="text" id="noteAuthor" placeholder="名前">
+            <textarea id="noteText" placeholder="気づいたことを書こう..."></textarea>
+            <button id="noteSubmit">送信</button>
+          </div>
+          <div class="notes-list" id="notesList"></div>
+        </div>
       </div>
     </div>
   </div>
 </main>
+
+<!-- MY DEVICE フッター -->
 <div class="my-device-bar">
   <div class="my-device-inner">
     <div class="my-label">MY DEVICE</div>
     <div class="divider"></div>
-    <div class="input-group"><div class="input-label">グループ名</div><input class="my-input" id="myName" placeholder="例: 窓際チーム"></div>
-    <div class="input-group"><div class="input-label">セッションID</div><input class="my-input" id="mySession" placeholder="自分専用ID または チーム共通ID"><div style="font-size:9px;color:var(--text-muted);margin-top:2px">1人モード: 自分の名前。グループモード: チーム共通ID</div></div>
-    <div class="input-group"><div class="input-label">条件メモ</div><input class="my-input memo-input" id="myMemo" placeholder="例: 窓際・カーテン全開"></div>
-    <button class="join-btn" id="joinBtn" disabled>参加する</button>
-    <div class="divider"></div>
     <button class="connect-btn" id="serialBtn">🔌 接続</button>
+    <button class="share-btn" id="shareBtn" style="display:none">👥 共有する</button>
+    <div class="input-group memo-box" id="memoBox" style="display:none">
+      <div class="input-label">条件メモ</div>
+      <input class="my-input memo-input" id="myMemo" placeholder="例: 窓際">
+    </div>
     <div class="my-current">
       <div class="my-current-label">現在値</div>
       <div class="my-current-val" id="myVal">--</div>
@@ -87,6 +104,20 @@
     <span class="demo-badge" id="demoBadge" style="display:none">DEMO MODE</span>
   </div>
 </div>
-<script src="app.js?v=2.1"></script>
+
+<!-- 共有モーダル -->
+<div class="modal-overlay" id="shareModal" style="display:none">
+  <div class="modal">
+    <h3 class="modal-title">名前を入力</h3>
+    <p class="modal-sub">他の人にも自分の波形が見えるようになります。あとから変更できます。</p>
+    <input type="text" id="modalNameInput" class="modal-input" placeholder="例: 田中">
+    <div class="modal-btns">
+      <button class="modal-cancel" id="modalCancel">キャンセル</button>
+      <button class="modal-confirm" id="modalConfirm">共有開始</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js?v=3.0"></script>
 </body>
 </html>
