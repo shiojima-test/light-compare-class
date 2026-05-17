@@ -1,7 +1,16 @@
-// SchooMy 明るさ比較システム v4.0
+// SchooMy 明るさ比較システム v4.1
 // 3モードのタブ切替 (📈マイ波形 / 🔲グリッド / 🔀重ね合わせ)
 // 計測と全体表示が独立。共有してもモード遷移しない (手動切替)。
 // Firebase は常時購読 — 計測していない先生もモード2/3で全体を見られる。
+//
+// v4.1 変更点:
+//   - 重ね合わせモードの描画修正
+//     原因: 親 #overlayPanel が display:none → 表示直後の同期タイミングで
+//     new Chart() が走るため、Chart.js が親サイズを 0×0 と測ってしまい
+//     キャンバスのビットマップが 0×0 のまま固定。以降 update() しても
+//     0×0 に描画され続け何も見えなかった。
+//     対策: 生成前に強制 reflow を起こし、生成後と setMode('overlay')
+//     直後の rAF で chart.resize() を呼んで親サイズを再採取する。
 //
 // v4.0 変更点:
 //   - 3モード切替: my-wave / grid / overlay
@@ -239,6 +248,12 @@ function setMode(mode){
   else if(mode==='overlay') $('viewOverlay').classList.add('active');
   // モード切替直後に即時描画 (rAF まで待たない)
   drawForCurrentMode(true);
+  // v4.1: 重ね合わせは親が display:none → block への遷移直後だと Chart.js が
+  // 親サイズを正しく取れず 0×0 のまま固定されることがある。次フレームで
+  // 必ず resize を呼んで親サイズを再採取する。
+  if(mode==='overlay'){
+    requestAnimationFrame(()=>{ try{ overlayChart && overlayChart.resize(); }catch(e){} });
+  }
 }
 
 // v4.0: 共有人数バッジ更新
@@ -490,6 +505,11 @@ function ensureOverlayChart(){
   if(overlayChart) return overlayChart;
   const ctx=$('overlayChart');
   if(!ctx) return null;
+  // v4.1: 親 (#overlayPanel) が display:none から表示直後の同期タイミングだと
+  // Chart.js が親サイズを 0×0 と測ってしまうので、生成前に強制 reflow する。
+  const panel=$('overlayPanel');
+  if(panel) void panel.offsetHeight;
+  if(ctx.parentElement) void ctx.parentElement.offsetHeight;
   overlayChart=new Chart(ctx,{
     type:'line',
     data:{datasets:[]},
@@ -508,6 +528,8 @@ function ensureOverlayChart(){
       }
     }
   });
+  // v4.1: 生成直後の親サイズはまだ確定していないことがあるので次フレームで再採取。
+  requestAnimationFrame(()=>{ try{ overlayChart && overlayChart.resize(); }catch(e){} });
   return overlayChart;
 }
 function updateOverlayChart(){
