@@ -1,7 +1,17 @@
-// SchooMy 明るさ比較システム v4.1
+// SchooMy 明るさ比較システム v4.2
 // 3モードのタブ切替 (📈マイ波形 / 🔲グリッド / 🔀重ね合わせ)
 // 計測と全体表示が独立。共有してもモード遷移しない (手動切替)。
 // Firebase は常時購読 — 計測していない先生もモード2/3で全体を見られる。
+//
+// v4.2 変更点:
+//   - 重ね合わせモードの X軸正規化 (各自 0秒スタート)
+//     原因: 元データ p.e は「各自の接続起点からの経過秒」なので、人によって
+//     340秒台と 0秒台で大きくズレ、X軸の直近10秒スライドだとデータ点が
+//     全て描画範囲外に落ちて「線が出ない」状態になっていた。
+//     対策: computeOverlayDatasets で dataset ごとに最小 e を引いて
+//     0 始まりに正規化。updateOverlayChart は X軸スライドを廃止し、
+//     min=0, max=Math.max(60, xMax) の全期間表示に変更。
+//     (v3.3 で決定の「波形の形を比較する」仕様に立ち返り)
 //
 // v4.1 変更点:
 //   - 重ね合わせモードの描画修正
@@ -444,15 +454,26 @@ function computeMyDatasets(){
   }];
 }
 
-// v4.0: 重ね合わせモードの datasets (sharedStudents 全員)
+// v4.2: 重ね合わせモードの datasets (sharedStudents 全員)
+// 各自の接続開始 = 0秒 として正規化する。
+// 元データの p.e は「各自の接続起点からの経過秒」なので、人によって 340秒台
+// だったり 0秒台だったりする。重ね合わせは「波形の形」を比較するモードなので
+// 各 dataset 内の最小 e を引いて 0 始まりに揃える (v3.3 で決定した仕様)。
 function computeOverlayDatasets(){
   const out=[];
   for(const [id,o] of Object.entries(sharedStudents)){
     const c = (id===myId) ? MY_COLOR : colorFor(id);
     const label = (o.name||'名前なし') + (o.place?' ('+o.place+')':'') + (id===myId?' (自分)':'');
+    const recent = (o && Array.isArray(o.recent)) ? o.recent : [];
+    let data=[];
+    if(recent.length){
+      const xs = recent.map(p=>p.e||0);
+      const xMin = Math.min(...xs);
+      data = recent.map(p=>({x:(p.e||0)-xMin, y:p.v}));
+    }
     out.push({
       label,
-      data: (o.recent||[]).map(p=>({x:p.e,y:p.v})),
+      data,
       borderColor: c,
       backgroundColor: c+'22',
       borderWidth: (id===myId)?3:2,
@@ -537,16 +558,18 @@ function updateOverlayChart(){
   if(!ch) return;
   const datasets=computeOverlayDatasets();
   ch.data.datasets=datasets;
-  // 重ね合わせは sharedStudents の最大 e を基準にスライド
-  let maxE=0;
-  for(const o of Object.values(sharedStudents)){
-    if(o && Array.isArray(o.recent) && o.recent.length){
-      const last=o.recent[o.recent.length-1].e||0;
-      if(last>maxE) maxE=last;
+  // v4.2: 各 dataset は 0 始まりに正規化済 (computeOverlayDatasets 参照)。
+  // 全期間表示で「変化の形」を比較できるよう、X軸スライドは廃止。
+  // 全 dataset の x 最大値を取り、min=0, max=Math.max(60, xMax) とする。
+  let xMax=0;
+  for(const ds of datasets){
+    if(ds.data && ds.data.length){
+      const last=ds.data[ds.data.length-1].x||0;
+      if(last>xMax) xMax=last;
     }
   }
-  if(maxE <= LIVE_WINDOW_SEC){ ch.options.scales.x.min=0; ch.options.scales.x.max=LIVE_WINDOW_SEC; }
-  else { ch.options.scales.x.min=maxE-LIVE_WINDOW_SEC; ch.options.scales.x.max=maxE; }
+  ch.options.scales.x.min=0;
+  ch.options.scales.x.max=Math.max(60, xMax);
   ch.options.scales.y.max = computeYMax(datasets);
   ch.update('none');
 }
