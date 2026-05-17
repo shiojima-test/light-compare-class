@@ -1,7 +1,18 @@
-// SchooMy 明るさ比較システム v4.2
-// 3モードのタブ切替 (📈マイ波形 / 🔲グリッド / 🔀重ね合わせ)
+// SchooMy 明るさ比較システム v5.0
+// 2モードのタブ切替 (📈マイ波形 / 🔲みんなのグリッド)
 // 計測と全体表示が独立。共有してもモード遷移しない (手動切替)。
-// Firebase は常時購読 — 計測していない先生もモード2/3で全体を見られる。
+// Firebase は常時購読 — 計測していない先生もグリッドで全体を見られる。
+//
+// v5.0 変更点:
+//   - 「みんなの重ね合わせ」モードを完全削除
+//     重ねグラフは v4.0〜v4.2 で X 軸正規化や resize 問題を順次解決したが、
+//     最終的に「同時刻軸での比較」が授業中に活きないことが分かったため廃止。
+//   - みんなのグリッドカードを「数値中心」に再設計 (グラフを排除)
+//     名前 / 場所 / 現在値 (特大) / 最大・最小 をひと目で読める正方形カード。
+//     レスポンシブ: PC 3列 / タブレット 2列 / スマホ 1列。
+//   - Firebase 書き込みに recentMax / recentMin / currentValue / lastUpdate を
+//     含める (各タブで集計済みなので受信側は単純に読むだけ)。
+//   - localStorage に保存された旧モード 'overlay' は 'grid' に自動フォールバック。
 //
 // v4.2 変更点:
 //   - 重ね合わせモードの X軸正規化 (各自 0秒スタート)
@@ -84,9 +95,11 @@ let myName=localStorage.getItem('myName')||'';
 let myPlace=localStorage.getItem('myPlace')||'';
 let myMemo='';
 
-// v4.0: 現在表示モード
+// v5.0: 現在表示モード (重ね合わせ廃止で 2モード化)
 let currentMode = localStorage.getItem('viewMode') || 'my-wave';
-const VALID_MODES = new Set(['my-wave','grid','overlay']);
+// 旧 'overlay' が残っていたら 'grid' にフォールバック
+if(currentMode === 'overlay') currentMode = 'grid';
+const VALID_MODES = new Set(['my-wave','grid']);
 if(!VALID_MODES.has(currentMode)) currentMode='my-wave';
 
 let connected=false;
@@ -246,7 +259,7 @@ function showToast(msg){
   toastHideTimer=setTimeout(()=>{ t.style.display='none'; }, 3500);
 }
 
-// v4.0: モード切替
+// v5.0: モード切替 (my-wave / grid の 2 モードのみ)
 function setMode(mode){
   if(!VALID_MODES.has(mode)) return;
   currentMode=mode;
@@ -255,26 +268,19 @@ function setMode(mode){
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   if(mode==='my-wave') $('viewMyWave').classList.add('active');
   else if(mode==='grid') $('viewGrid').classList.add('active');
-  else if(mode==='overlay') $('viewOverlay').classList.add('active');
   // モード切替直後に即時描画 (rAF まで待たない)
   drawForCurrentMode(true);
-  // v4.1: 重ね合わせは親が display:none → block への遷移直後だと Chart.js が
-  // 親サイズを正しく取れず 0×0 のまま固定されることがある。次フレームで
-  // 必ず resize を呼んで親サイズを再採取する。
-  if(mode==='overlay'){
-    requestAnimationFrame(()=>{ try{ overlayChart && overlayChart.resize(); }catch(e){} });
-  }
 }
 
-// v4.0: 共有人数バッジ更新
+// v5.0: 共有人数バッジ更新 (グリッドのみ)
 function updateShareCounts(){
   const n=Object.keys(sharedStudents).length;
   $('gridCount').textContent=n;
-  $('overlayCount').textContent=n;
 }
 
-// v4.0: グリッドモード描画
-const gridCharts={}; // {studentId: Chart instance}
+// v5.0: グリッドモード描画 (数値中心のカード、グラフなし)
+// 共有中の全員 (自分含む) を 1 カード/人 で表示。各カードに名前 / 場所 /
+// 現在値 (特大) / 最大・最小 を出す。クリックすると詳細表示モードへ。
 function renderGrid(){
   const container=$('gridCards');
   const empty=$('gridEmpty');
@@ -282,84 +288,31 @@ function renderGrid(){
   if(entries.length===0){
     if(empty) empty.style.display='';
     container.innerHTML='';
-    // 残ったチャートを掃除
-    for(const id of Object.keys(gridCharts)){
-      try{ gridCharts[id].destroy(); }catch(e){}
-      delete gridCharts[id];
-    }
     return;
   }
   if(empty) empty.style.display='none';
 
-  // 既存セルの id を取得して、消えた人を除去
-  const liveIds = new Set(entries.map(([id])=>id));
-  for(const id of Object.keys(gridCharts)){
-    if(!liveIds.has(id)){
-      try{ gridCharts[id].destroy(); }catch(e){}
-      delete gridCharts[id];
-      const oldCell=document.querySelector(`.grid-cell[data-id="${id}"]`);
-      if(oldCell) oldCell.remove();
-    }
-  }
-
-  for(const [id, o] of entries){
-    const c = (id===myId) ? MY_COLOR : colorFor(id);
-    let cell=document.querySelector(`.grid-cell[data-id="${id}"]`);
-    if(!cell){
-      cell=document.createElement('div');
-      cell.className='grid-cell' + (id===myId?' is-me':'');
-      cell.dataset.id=id;
-      cell.style.setProperty('--cell-color', c);
-      cell.innerHTML=`
-        <div class="gc-top">
-          <div class="gc-name">${escapeHtml(o.name||'名前なし')}${id===myId?'<span class="me-tag">自分</span>':''}</div>
-          <div class="gc-place">${escapeHtml(o.place||o.memo||'')}</div>
-        </div>
-        <div class="gc-row">
-          <div class="gc-meta">直近値</div>
-          <div class="gc-cur"><span class="gc-cur-val">--</span><span class="gc-unit">raw</span></div>
-        </div>
-        <div class="gc-chart"><canvas></canvas></div>
-      `;
-      cell.addEventListener('click', ()=>openDetail(id));
-      container.appendChild(cell);
-    }
-    // 値を更新
-    cell.querySelector('.gc-name').innerHTML = escapeHtml(o.name||'名前なし') + (id===myId?'<span class="me-tag">自分</span>':'');
-    cell.querySelector('.gc-place').textContent = o.place||o.memo||'';
-    const last = (Array.isArray(o.recent)&&o.recent.length) ? o.recent[o.recent.length-1].v : '--';
-    cell.querySelector('.gc-cur-val').textContent = last;
-    // チャート
-    let ch=gridCharts[id];
-    if(!ch){
-      const canvas=cell.querySelector('canvas');
-      ch=new Chart(canvas.getContext('2d'),{
-        type:'line',
-        data:{datasets:[{data:[],borderColor:c,backgroundColor:c+'22',borderWidth:2,pointRadius:0,tension:0.4,cubicInterpolationMode:'monotone',fill:false}]},
-        options:{
-          responsive:true, maintainAspectRatio:false, animation:false, parsing:false, normalized:true,
-          plugins:{legend:{display:false},tooltip:{enabled:false}},
-          scales:{
-            x:{type:'linear',min:0,max:LIVE_WINDOW_SEC,display:false},
-            y:{beginAtZero:true,min:0,display:false}
-          }
-        }
-      });
-      gridCharts[id]=ch;
-    }
-    const data=(o.recent||[]).map(p=>({x:p.e,y:p.v}));
-    ch.data.datasets[0].data=data;
-    ch.data.datasets[0].borderColor=c;
-    // X 範囲
-    const maxE=data.length?data[data.length-1].x:0;
-    if(maxE<=LIVE_WINDOW_SEC){ ch.options.scales.x.min=0; ch.options.scales.x.max=LIVE_WINDOW_SEC; }
-    else { ch.options.scales.x.min=maxE-LIVE_WINDOW_SEC; ch.options.scales.x.max=maxE; }
-    // Y は max
-    let maxV=0;
-    for(const pt of data) if(pt.y>maxV) maxV=pt.y;
-    ch.options.scales.y.max = Math.max(MIN_Y_MAX, Math.ceil(maxV*1.2));
-    ch.update('none');
-  }
+  const html = entries.map(([id, s])=>{
+    const isMe = (id===myId);
+    const cardColor = isMe ? MY_COLOR : colorFor(id);
+    const recent = Array.isArray(s.recent) ? s.recent : [];
+    const cur = (s.currentValue!=null) ? s.currentValue
+              : (recent.length ? recent[recent.length-1].v : null);
+    const mx = (s.recentMax!=null) ? s.recentMax : '--';
+    const mn = (s.recentMin!=null) ? s.recentMin : '--';
+    const name = s.name || '名無し';
+    const place = s.place || s.memo || '場所未設定';
+    return `<div class="grid-card${isMe?' is-me':''}" data-student-id="${escapeHtml(id)}" style="--card-color:${cardColor}">
+      <div class="card-name">${escapeHtml(name)}${isMe?'<span class="me-tag">自分</span>':''}</div>
+      <div class="card-place">${escapeHtml(place)}</div>
+      <div class="card-current">${cur==null?'--':cur}<span class="unit">raw</span></div>
+      <div class="card-stats">
+        <span class="card-stat card-max">最大: ${mx}</span>
+        <span class="card-stat card-min">最小: ${mn}</span>
+      </div>
+    </div>`;
+  }).join('');
+  container.innerHTML = html;
 }
 
 // v4.0: 詳細表示を開く (グリッドセルクリック時)
@@ -376,18 +329,13 @@ function closeDetail(){
   $('detailOverlay').style.display='none';
 }
 
-// v4.0: 現在モードに応じた描画
+// v5.0: 現在モードに応じた描画 (my-wave / grid)
 function drawForCurrentMode(forceRedraw){
   if(currentMode==='my-wave'){
     updateMyChart();
     updateSummary();
   } else if(currentMode==='grid'){
     renderGrid();
-  } else if(currentMode==='overlay'){
-    const has=Object.keys(sharedStudents).length>0;
-    $('overlayEmpty').style.display = has ? 'none' : '';
-    $('overlayPanel').style.display = has ? '' : 'none';
-    if(has) updateOverlayChart();
   }
   // 詳細オーバーレイが開いていれば常に更新
   if(focusedId && $('detailOverlay').style.display==='flex'){
@@ -454,39 +402,7 @@ function computeMyDatasets(){
   }];
 }
 
-// v4.2: 重ね合わせモードの datasets (sharedStudents 全員)
-// 各自の接続開始 = 0秒 として正規化する。
-// 元データの p.e は「各自の接続起点からの経過秒」なので、人によって 340秒台
-// だったり 0秒台だったりする。重ね合わせは「波形の形」を比較するモードなので
-// 各 dataset 内の最小 e を引いて 0 始まりに揃える (v3.3 で決定した仕様)。
-function computeOverlayDatasets(){
-  const out=[];
-  for(const [id,o] of Object.entries(sharedStudents)){
-    const c = (id===myId) ? MY_COLOR : colorFor(id);
-    const label = (o.name||'名前なし') + (o.place?' ('+o.place+')':'') + (id===myId?' (自分)':'');
-    const recent = (o && Array.isArray(o.recent)) ? o.recent : [];
-    let data=[];
-    if(recent.length){
-      const xs = recent.map(p=>p.e||0);
-      const xMin = Math.min(...xs);
-      data = recent.map(p=>({x:(p.e||0)-xMin, y:p.v}));
-    }
-    out.push({
-      label,
-      data,
-      borderColor: c,
-      backgroundColor: c+'22',
-      borderWidth: (id===myId)?3:2,
-      pointRadius: 0,
-      tension: 0.4,
-      cubicInterpolationMode: 'monotone',
-      fill: false
-    });
-  }
-  return out;
-}
-
-// v4.0: 詳細表示モードの datasets (1人のみ)
+// v5.0: 詳細表示モードの datasets (1人のみ)
 function computeDetailDatasets(){
   if(!focusedId) return [];
   if(focusedId===myId && localHistory.length>0){
@@ -520,61 +436,7 @@ function updateMyChart(){
   ch.update('none');
 }
 
-// v4.0: 重ね合わせチャート更新
-let overlayChart=null;
-function ensureOverlayChart(){
-  if(overlayChart) return overlayChart;
-  const ctx=$('overlayChart');
-  if(!ctx) return null;
-  // v4.1: 親 (#overlayPanel) が display:none から表示直後の同期タイミングだと
-  // Chart.js が親サイズを 0×0 と測ってしまうので、生成前に強制 reflow する。
-  const panel=$('overlayPanel');
-  if(panel) void panel.offsetHeight;
-  if(ctx.parentElement) void ctx.parentElement.offsetHeight;
-  overlayChart=new Chart(ctx,{
-    type:'line',
-    data:{datasets:[]},
-    options:{
-      responsive:true, maintainAspectRatio:false, animation:false, parsing:false, normalized:true,
-      plugins:{
-        legend:{position:'top',align:'start',labels:{color:'#2D3A3A',font:{size:12,weight:'600'},boxWidth:14,boxHeight:14,padding:12,usePointStyle:true,pointStyle:'circle'}},
-        tooltip:{mode:'index',intersect:false,callbacks:{
-          title:items=>items.length?('経過 '+items[0].parsed.x.toFixed(1)+'秒'):'',
-          label:c=>c.dataset.label+': '+c.parsed.y+' raw'
-        }}
-      },
-      scales:{
-        x:{type:'linear',min:0,max:60,ticks:{color:'#6B8180',callback:v=>v+'s',maxTicksLimit:7,font:{size:11}},grid:{color:'rgba(58,171,168,0.1)'},title:{display:true,text:'経過時間 (秒)',color:'#6B8180',font:{size:11}}},
-        y:{beginAtZero:true,min:0,ticks:{color:'#6B8180',font:{size:11}},grid:{color:'rgba(58,171,168,0.1)'},title:{display:true,text:'明るさ (raw)',color:'#6B8180',font:{size:11}}}
-      }
-    }
-  });
-  // v4.1: 生成直後の親サイズはまだ確定していないことがあるので次フレームで再採取。
-  requestAnimationFrame(()=>{ try{ overlayChart && overlayChart.resize(); }catch(e){} });
-  return overlayChart;
-}
-function updateOverlayChart(){
-  const ch=ensureOverlayChart();
-  if(!ch) return;
-  const datasets=computeOverlayDatasets();
-  ch.data.datasets=datasets;
-  // v4.2: 各 dataset は 0 始まりに正規化済 (computeOverlayDatasets 参照)。
-  // 全期間表示で「変化の形」を比較できるよう、X軸スライドは廃止。
-  // 全 dataset の x 最大値を取り、min=0, max=Math.max(60, xMax) とする。
-  let xMax=0;
-  for(const ds of datasets){
-    if(ds.data && ds.data.length){
-      const last=ds.data[ds.data.length-1].x||0;
-      if(last>xMax) xMax=last;
-    }
-  }
-  ch.options.scales.x.min=0;
-  ch.options.scales.x.max=Math.max(60, xMax);
-  ch.options.scales.y.max = computeYMax(datasets);
-  ch.update('none');
-}
-
-// v4.0: 詳細チャート (グリッドセルタップ時)
+// v5.0: 詳細チャート (グリッドカードタップ時)
 let detailChart=null;
 function ensureDetailChart(){
   if(detailChart) return detailChart;
@@ -964,21 +826,33 @@ function startSharing(){
   if(!othersSubscribed) subscribeToOthers();
 
   updateModeBadge();
-  // v4.0: 共有してもモード遷移しない。トーストで誘導のみ。
+  // v5.0: 共有してもモード遷移しない。トーストで誘導のみ。
   if(currentMode==='my-wave'){
-    showToast('共有を開始しました。「🔲 グリッド」「🔀 重ね合わせ」タブで全員の波形が見えます');
+    showToast('共有を開始しました。「🔲 みんなのグリッド」タブで全員の現在値が見えます');
   }
 }
 
 function publishOwnRecent(){
   if(!shared || !db) return;
   // v3.3: localHistory は既に直近60秒分しかない (trimToWindow で管理)
+  // v5.0: グリッドカードが直接読めるよう max/min/currentValue を同梱して書き込む
+  let recentMax=null, recentMin=null, currentValue=null;
+  if(localHistory.length){
+    let mx=-Infinity, mn=Infinity;
+    for(const p of localHistory){ if(p.v>mx)mx=p.v; if(p.v<mn)mn=p.v; }
+    recentMax=mx; recentMin=mn;
+    currentValue = (latestValue!=null) ? latestValue : localHistory[localHistory.length-1].v;
+  }
   db.ref('sessions/'+SESSION_ID+'/students/'+myId).set({
     name: myName,
     place: myPlace,
     memo: myMemo,
     startedAt: connectStartedAt,    // 起点 (絶対時刻ms)
     recent: localHistory.slice(),    // [{e, v}] 経過秒+値
+    recentMax,
+    recentMin,
+    currentValue,
+    lastUpdate: Date.now(),
     updatedAt: Date.now()
   });
 }
@@ -1020,38 +894,8 @@ document.addEventListener('keydown',e=>{
 // v4.0: ノート機能は v3.x の遺物。HTML から削除済み。renderNotes は空関数で残置。
 function renderNotes(obj){ /* v4.0: no-op (notes UI removed) */ }
 
-// =============== CSV ===============
-$('csvBtn').addEventListener('click',()=>{
-  // v4.0: 重ね合わせモードの CSV — sharedStudents 全員 (自分含む) を出力
-  let csv='﻿名前,場所,経過秒,raw値\n';
-  const entries = Object.entries(sharedStudents);
-  if(entries.length===0){
-    // sharedStudents が空でも自分の localHistory があれば出力
-    if(localHistory.length){
-      const myLabel=myName||'自分';
-      const myPlaceLabel=myPlace||'';
-      for(const p of localHistory){
-        csv += `"${myLabel}","${myPlaceLabel}",${(p.e||0).toFixed(3)},${p.v}\n`;
-      }
-    } else {
-      alert('共有データがありません');
-      return;
-    }
-  }
-  for(const [id,o] of entries){
-    const placeLabel = o.place || o.memo || '';
-    for(const p of (o.recent||[])){
-      csv += `"${o.name||'名前なし'}","${placeLabel}",${(p.e||0).toFixed(3)},${p.v}\n`;
-    }
-  }
-  const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
-  const a=document.createElement('a');
-  const d=new Date();
-  const ds=d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0')+'_'+String(d.getHours()).padStart(2,'0')+String(d.getMinutes()).padStart(2,'0');
-  a.href=URL.createObjectURL(blob);
-  a.download=`light-compare-${ds}.csv`;
-  a.click();
-});
+// v5.0: 重ね合わせ専用の CSV ボタンは廃止 (該当 UI ごと削除)。
+//        自分の記録レビュー用 CSV は reviewCsvBtn 経由で残存。
 
 // =============== Demo Mode ===============
 const DEMO_GROUPS=[
@@ -1099,15 +943,16 @@ function startDemo(){
   $('myMemo').value=myPlace;
   updateChartTitle();
 
-  // 自分を sharedStudents に入れる (v4.0: 自分も含めて描画)
+  // v5.0: 自分を sharedStudents に入れる (自分も含めてグリッドに表示)
+  //       max/min/currentValue も格納してカード描画で直接参照できるようにする。
   sharedStudents={};
-  sharedStudents[myId]={name:myName, place:myPlace, recent:localHistory.slice(), startedAt:connectStartedAt, updatedAt:Date.now()};
+  sharedStudents[myId]=buildDemoStudent({name:myName, place:myPlace, recent:localHistory.slice(), startedAt:connectStartedAt});
   // 他チームの履歴 (経過秒 0..60、すこしずつズラして変化感を出す)
   DEMO_GROUPS.forEach((g,i)=>{
     if(g.name==='教室中央チーム') return;
     const recent=[];
     for(let k=0;k<=60;k++) recent.push({e: k, v: jitter(g.base)});
-    sharedStudents['demo-'+i]={name:g.name, place:g.memo, recent:recent, startedAt:connectStartedAt, updatedAt:Date.now()};
+    sharedStudents['demo-'+i]=buildDemoStudent({name:g.name, place:g.memo, recent, startedAt:connectStartedAt});
   });
 
   updateShareCounts();
@@ -1118,13 +963,18 @@ function startDemo(){
   // 連続更新 (300ms ごと、経過秒を増やしながら追加)
   demoIntervals.push(setInterval(()=>{
     const e = currentElapsed();
-    localHistory.push({e, v: jitter(1280)});
+    const newV = jitter(1280);
+    localHistory.push({e, v: newV});
     trimToWindow(localHistory);
-    $('myVal').textContent=localHistory[localHistory.length-1].v;
-    // 自分の recent も更新
+    latestValue = newV;
+    $('myVal').textContent=newV;
+    // v5.0: 自分の recent + 集計値 (max/min/currentValue) を更新
     if(sharedStudents[myId]){
-      sharedStudents[myId].recent = localHistory.slice();
-      sharedStudents[myId].updatedAt = Date.now();
+      sharedStudents[myId] = buildDemoStudent({
+        name:myName, place:myPlace,
+        recent:localHistory.slice(),
+        startedAt:connectStartedAt
+      });
     }
     DEMO_GROUPS.forEach((g,i)=>{
       if(g.name==='教室中央チーム') return;
@@ -1134,9 +984,35 @@ function startDemo(){
       // 直近60秒に絞る (e基準)
       const cutoff = e - 60 - 5;
       while(sharedStudents[k].recent.length>0 && sharedStudents[k].recent[0].e<cutoff) sharedStudents[k].recent.shift();
-      sharedStudents[k].updatedAt=Date.now();
+      // 集計値も更新
+      const updated = buildDemoStudent({
+        name:g.name, place:g.memo,
+        recent:sharedStudents[k].recent,
+        startedAt:connectStartedAt
+      });
+      sharedStudents[k].recentMax = updated.recentMax;
+      sharedStudents[k].recentMin = updated.recentMin;
+      sharedStudents[k].currentValue = updated.currentValue;
+      sharedStudents[k].lastUpdate = updated.lastUpdate;
+      sharedStudents[k].updatedAt = updated.updatedAt;
     });
   }, 300));
+}
+
+// v5.0: デモ用 student オブジェクト生成。recent から max/min/currentValue を集計。
+function buildDemoStudent({name, place, recent, startedAt}){
+  const arr = Array.isArray(recent) ? recent : [];
+  let mx=null, mn=null, cur=null;
+  if(arr.length){
+    let mmx=-Infinity, mmn=Infinity;
+    for(const p of arr){ if(p.v>mmx)mmx=p.v; if(p.v<mmn)mmn=p.v; }
+    mx=mmx; mn=mmn;
+    cur = arr[arr.length-1].v;
+  }
+  const now=Date.now();
+  return { name, place, recent:arr, startedAt,
+           recentMax:mx, recentMin:mn, currentValue:cur,
+           lastUpdate:now, updatedAt:now };
 }
 
 function stopDemo(){
@@ -1177,6 +1053,14 @@ function stopDemo(){
 // v4.0: モードタブのクリックハンドラ
 document.querySelectorAll('.mode-tab').forEach(btn=>{
   btn.addEventListener('click', ()=>setMode(btn.dataset.mode));
+});
+
+// v5.0: グリッドカード — イベント委譲でクリック → 詳細表示
+$('gridCards').addEventListener('click', e=>{
+  const card = e.target.closest('.grid-card');
+  if(!card) return;
+  const id = card.dataset.studentId;
+  if(id) openDetail(id);
 });
 
 ensureChart();

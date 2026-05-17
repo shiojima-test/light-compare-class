@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SchooMy 明るさ比較システム v4.2</title>
-<link rel="stylesheet" href="style.css?v=4.2">
+<title>SchooMy 明るさ比較システム v5.0</title>
+<link rel="stylesheet" href="style.css?v=5.0">
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -14,7 +14,7 @@
   <div class="header-left">
     <div class="logo-badge">SchooMy</div>
     <div class="header-title">明るさ<span>比較</span>システム</div>
-    <div class="version-tag">v4.2</div>
+    <div class="version-tag">v5.0</div>
   </div>
   <div class="header-right">
     <div class="mode-badge viewing" id="modeBadge">観覧中</div>
@@ -25,11 +25,10 @@
   </div>
 </header>
 
-<!-- v4.0: モード切替タブ -->
+<!-- v5.0: モード切替タブ (2モード構成) -->
 <nav class="mode-tabs">
   <button class="mode-tab active" data-mode="my-wave" id="tabMyWave">📈 マイ波形</button>
   <button class="mode-tab" data-mode="grid" id="tabGrid">🔲 みんなのグリッド <span class="badge-count" id="gridCount">0</span></button>
-  <button class="mode-tab" data-mode="overlay" id="tabOverlay">🔀 みんなの重ね合わせ <span class="badge-count" id="overlayCount">0</span></button>
 </nav>
 
 <!-- トースト通知 -->
@@ -83,21 +82,7 @@
     <div class="grid-cards" id="gridCards"></div>
   </section>
 
-  <!-- =============== VIEW 3: みんなの重ね合わせ =============== -->
-  <section class="view view-overlay" id="viewOverlay">
-    <div class="overlay-empty" id="overlayEmpty">
-      <div class="empty-icon">🔀</div>
-      <div class="empty-title">現在誰も共有していません</div>
-      <div class="empty-sub">誰かが「共有する」を押すとここに表示されます</div>
-    </div>
-    <div class="panel panel-full" id="overlayPanel" style="display:none">
-      <div class="panel-header">
-        <div class="panel-title"><div class="icon">🔀</div>重ね合わせグラフ — 共有中の全員</div>
-        <button class="csv-btn" id="csvBtn">⬇ CSV</button>
-      </div>
-      <div class="panel-body chart-body"><canvas id="overlayChart"></canvas></div>
-    </div>
-  </section>
+  <!-- v5.0: 「みんなの重ね合わせ」モードは廃止 (グリッドカード再設計に統合) -->
 
 </main>
 
@@ -154,6 +139,6 @@
   </div>
 </div>
 
-<script src="app.js?v=4.2"></script>
+<script src="app.js?v=5.0"></script>
 </body>
 </html>
