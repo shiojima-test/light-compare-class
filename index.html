@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SchooMy 明るさ比較システム v5.0</title>
-<link rel="stylesheet" href="style.css?v=5.0">
+<title>SchooMy 明るさ比較システム v5.1</title>
+<link rel="stylesheet" href="style.css?v=5.1">
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -14,7 +14,7 @@
   <div class="header-left">
     <div class="logo-badge">SchooMy</div>
     <div class="header-title">明るさ<span>比較</span>システム</div>
-    <div class="version-tag">v5.0</div>
+    <div class="version-tag">v5.1</div>
   </div>
   <div class="header-right">
     <div class="mode-badge viewing" id="modeBadge">観覧中</div>
@@ -41,22 +41,22 @@
     <div class="summary-grid">
       <div class="summary-card max">
         <div class="summary-label">最大値</div>
-        <div class="summary-value" id="sumMax">--<span class="summary-unit">raw</span></div>
+        <div class="summary-value" id="sumMax">--</div>
         <div class="summary-who" id="sumMaxLabel">直近10秒〜60秒</div>
       </div>
       <div class="summary-card avg">
         <div class="summary-label">平均値</div>
-        <div class="summary-value" id="sumAvg">--<span class="summary-unit">raw</span></div>
+        <div class="summary-value" id="sumAvg">--</div>
         <div class="summary-who" id="sumAvgLabel">直近10秒〜60秒</div>
       </div>
       <div class="summary-card min">
         <div class="summary-label">最小値</div>
-        <div class="summary-value" id="sumMin">--<span class="summary-unit">raw</span></div>
+        <div class="summary-value" id="sumMin">--</div>
         <div class="summary-who" id="sumMinLabel">直近10秒〜60秒</div>
       </div>
       <div class="summary-card count">
         <div class="summary-label" id="sumCountLabel">現在値</div>
-        <div class="summary-value" id="sumCount">--<span class="summary-unit">raw</span></div>
+        <div class="summary-value" id="sumCount">--</div>
         <div class="summary-who" id="sumCountSub">接続するとライブ</div>
       </div>
     </div>
@@ -117,7 +117,6 @@
     <div class="my-current">
       <div class="my-current-label">現在値</div>
       <div class="my-current-val" id="myVal">--</div>
-      <div class="my-current-unit">raw</div>
     </div>
     <span class="demo-badge" id="demoBadge" style="display:none">DEMO MODE</span>
   </div>
@@ -139,6 +138,6 @@
   </div>
 </div>
 
-<script src="app.js?v=5.0"></script>
+<script src="app.js?v=5.1"></script>
 </body>
 </html>

@@ -1,7 +1,16 @@
-// SchooMy 明るさ比較システム v5.0
+// SchooMy 明るさ比較システム v5.1
 // 2モードのタブ切替 (📈マイ波形 / 🔲みんなのグリッド)
 // 計測と全体表示が独立。共有してもモード遷移しない (手動切替)。
 // Firebase は常時購読 — 計測していない先生もグリッドで全体を見られる。
+//
+// v5.1 変更点:
+//   - グリッドカードのコンパクト化 (PC 4×3 / タブレット 3列 / スマホ 2列)
+//   - 「場所」を文章として読める普通テキストに (旧: 小さなピル風タグ)
+//     最大 2 行で省略表示。詳細表示でフルテキストを再掲。
+//   - 画面に出ていた "raw" 単位を全削除 (生徒向けに不要な情報を整理)
+//     対象: サマリー4カード / MY DEVICE 現在値 / グリッドカード単位 /
+//          時系列グラフ Y 軸タイトル + ツールチップ
+//   - デモ参加者を 6 名 → 12 名に増員 (4×3 表示の見栄え確認用)
 //
 // v5.0 変更点:
 //   - 「みんなの重ね合わせ」モードを完全削除
@@ -305,7 +314,7 @@ function renderGrid(){
     return `<div class="grid-card${isMe?' is-me':''}" data-student-id="${escapeHtml(id)}" style="--card-color:${cardColor}">
       <div class="card-name">${escapeHtml(name)}${isMe?'<span class="me-tag">自分</span>':''}</div>
       <div class="card-place">${escapeHtml(place)}</div>
-      <div class="card-current">${cur==null?'--':cur}<span class="unit">raw</span></div>
+      <div class="card-current">${cur==null?'--':cur}</div>
       <div class="card-stats">
         <span class="card-stat card-max">最大: ${mx}</span>
         <span class="card-stat card-min">最小: ${mn}</span>
@@ -360,7 +369,7 @@ function ensureChart(){
         legend:{position:'top',align:'start',labels:{color:'#2D3A3A',font:{size:12,weight:'600'},boxWidth:14,boxHeight:14,padding:12,usePointStyle:true,pointStyle:'circle'}},
         tooltip:{mode:'index',intersect:false,callbacks:{
           title:items=>items.length?('経過 '+items[0].parsed.x.toFixed(1)+'秒'):'',
-          label:c=>c.dataset.label+': '+c.parsed.y+' raw'
+          label:c=>c.dataset.label+': '+c.parsed.y
         }}
       },
       scales:{
@@ -378,7 +387,7 @@ function ensureChart(){
           min:0,
           ticks:{color:'#6B8180',font:{size:11}},
           grid:{color:'rgba(58,171,168,0.1)'},
-          title:{display:true,text:'明るさ (raw)',color:'#6B8180',font:{size:11}}
+          title:{display:true,text:'明るさ',color:'#6B8180',font:{size:11}}
         }
       }
     }
@@ -449,11 +458,11 @@ function ensureDetailChart(){
       responsive:true, maintainAspectRatio:false, animation:false, parsing:false, normalized:true,
       plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false,callbacks:{
         title:items=>items.length?('経過 '+items[0].parsed.x.toFixed(1)+'秒'):'',
-        label:c=>c.dataset.label+': '+c.parsed.y+' raw'
+        label:c=>c.dataset.label+': '+c.parsed.y
       }}},
       scales:{
         x:{type:'linear',min:0,max:LIVE_WINDOW_SEC,ticks:{color:'#6B8180',callback:v=>v+'s',maxTicksLimit:7,font:{size:11}},grid:{color:'rgba(58,171,168,0.1)'},title:{display:true,text:'経過時間 (秒)',color:'#6B8180',font:{size:11}}},
-        y:{beginAtZero:true,min:0,ticks:{color:'#6B8180',font:{size:11}},grid:{color:'rgba(58,171,168,0.1)'},title:{display:true,text:'明るさ (raw)',color:'#6B8180',font:{size:11}}}
+        y:{beginAtZero:true,min:0,ticks:{color:'#6B8180',font:{size:11}},grid:{color:'rgba(58,171,168,0.1)'},title:{display:true,text:'明るさ',color:'#6B8180',font:{size:11}}}
       }
     }
   });
@@ -487,10 +496,10 @@ function updateSummary(){
   // (送信側 publishOwnRecent / pushSample / trimToWindow で既に直近60秒に絞られる)
   const pts=targetHistory;
   if(pts.length===0){
-    $('sumMax').innerHTML='--<span class="summary-unit">raw</span>';
-    $('sumAvg').innerHTML='--<span class="summary-unit">raw</span>';
-    $('sumMin').innerHTML='--<span class="summary-unit">raw</span>';
-    $('sumCount').innerHTML='--<span class="summary-unit">raw</span>';
+    $('sumMax').textContent='--';
+    $('sumAvg').textContent='--';
+    $('sumMin').textContent='--';
+    $('sumCount').textContent='--';
     $('sumCountLabel').textContent='現在値';
     $('sumCountSub').textContent='接続するとライブ';
     return;
@@ -505,27 +514,28 @@ function updateSummary(){
   const cur=pts[pts.length-1].v;
   // v3.4: ラベルをモード別に変更
   const scope = reviewMode ? '記録全体' : '直近10秒〜60秒';
-  $('sumMax').innerHTML=mx+'<span class="summary-unit">raw</span>';
-  $('sumAvg').innerHTML=avg+'<span class="summary-unit">raw</span>';
-  $('sumMin').innerHTML=mn+'<span class="summary-unit">raw</span>';
+  $('sumMax').textContent=mx;
+  $('sumAvg').textContent=avg;
+  $('sumMin').textContent=mn;
   $('sumMaxLabel').textContent=scope;
   $('sumAvgLabel').textContent=scope;
   $('sumMinLabel').textContent=scope;
 
   if(reviewMode){
     // v3.4: レビュー中は現在値の代わりに記録の最後の値を表示
-    $('sumCount').innerHTML=cur+'<span class="summary-unit">raw</span>';
+    $('sumCount').textContent=cur;
     $('sumCountLabel').textContent='終了時の値';
     $('sumCountSub').textContent=`全 ${reviewEndElapsed.toFixed(1)} 秒`;
   } else if(shared && focusedId===null){
     // チーム数を表示 (自分 + 他人)
     const myCount=(connected||demoMode)?1:0;
     const totalCount=myCount + Object.keys(sharedStudents).length;
+    // 「チーム」は単位なので残す (raw のような不要単位ではない)
     $('sumCount').innerHTML=totalCount+'<span class="summary-unit">チーム</span>';
     $('sumCountLabel').textContent='チーム数';
     $('sumCountSub').textContent='共有中';
   } else {
-    $('sumCount').innerHTML=cur+'<span class="summary-unit">raw</span>';
+    $('sumCount').textContent=cur;
     $('sumCountLabel').textContent='現在値';
     $('sumCountSub').textContent = (focusedId && focusedId!==myId) ? (sharedStudents[focusedId]?.name||'') : (myName||'自分');
   }
@@ -727,7 +737,7 @@ $('reviewCsvBtn').addEventListener('click',()=>{
   if(localHistory.length===0){ alert('記録データがありません'); return; }
   const name=myName||'自分';
   const place=myPlace||'';
-  let csv='﻿名前,場所,経過秒,raw値,絶対時刻\n';
+  let csv='﻿名前,場所,経過秒,センサー値,絶対時刻\n';
   for(const p of localHistory){
     const absMs = (connectStartedAt||0) + p.e*1000;
     const isoT = new Date(absMs).toISOString();
@@ -898,14 +908,24 @@ function renderNotes(obj){ /* v4.0: no-op (notes UI removed) */ }
 //        自分の記録レビュー用 CSV は reviewCsvBtn 経由で残存。
 
 // =============== Demo Mode ===============
-const DEMO_GROUPS=[
-  {name:'窓際チーム',    memo:'窓際・直射日光',  base:2840},
-  {name:'廊下チーム',    memo:'廊下・蛍光灯',    base:1950},
-  {name:'教室中央チーム',memo:'教室中央',        base:1280},
-  {name:'机の下チーム',  memo:'机の下',          base:890},
-  {name:'カバンの中チーム',memo:'カバンの中',    base:420},
-  {name:'引き出しチーム',memo:'引き出しの中',    base:193}
+// v5.1: 12 名のデモ参加者で 4×3 グリッドの見栄えを確認できるよう拡張。
+//       '鈴木' が自分相当 (myId のスロットに割り当てる)。
+const DEMO_PARTICIPANTS=[
+  {name:'田中', place:'窓際、カーテン全開で直射日光が強い', base:2840},
+  {name:'山本', place:'廊下、蛍光灯のみ',                   base:1950},
+  {name:'鈴木', place:'教室中央',                           base:1280},
+  {name:'佐藤', place:'机の下',                             base:890},
+  {name:'高橋', place:'カバンの中',                         base:420},
+  {name:'中村', place:'引き出しの中、暗い',                 base:193},
+  {name:'伊藤', place:'窓際だがカーテンあり',               base:1850},
+  {name:'渡辺', place:'天井近く、蛍光灯直下',               base:2200},
+  {name:'山田', place:'本棚の中',                           base:340},
+  {name:'小林', place:'PCの画面横',                         base:680},
+  {name:'加藤', place:'扉の隙間',                           base:520},
+  {name:'吉田', place:'ホワイトボード前',                   base:1450}
 ];
+const DEMO_SELF_NAME='鈴木';
+const DEMO_SELF_BASE=1280;
 
 function jitter(base){ return Math.max(0, base + Math.floor((Math.random()-0.5)*base*0.10)); }
 
@@ -923,16 +943,17 @@ function startDemo(){
 
   // デモ用に自分の名前/場所を仮設定 (LocalStorage は触らない)
   demoRestoreName=myName;
-  myName='教室中央チーム';
-  myPlace='教室中央';
-  myMemo='教室中央';
+  myName=DEMO_SELF_NAME;
+  const selfDemo = DEMO_PARTICIPANTS.find(p=>p.name===DEMO_SELF_NAME);
+  myPlace=selfDemo?selfDemo.place:'教室中央';
+  myMemo=myPlace;
 
   // v3.3: 自分の履歴を経過秒で初期化 (0..60 の 60 点)
   connectStartedAt = Date.now() - 60*1000; // 60秒前から接続中とみなす
   localHistory=[];
   rawBuffer=[];
   lastPushAt=0;
-  for(let i=0;i<=60;i++) localHistory.push({e: i, v: jitter(1280)});
+  for(let i=0;i<=60;i++) localHistory.push({e: i, v: jitter(DEMO_SELF_BASE)});
 
   // v4.0: shared フラグだけ立てる (Firebase は使わない / shareArea も無い)
   shared=true;
@@ -947,12 +968,12 @@ function startDemo(){
   //       max/min/currentValue も格納してカード描画で直接参照できるようにする。
   sharedStudents={};
   sharedStudents[myId]=buildDemoStudent({name:myName, place:myPlace, recent:localHistory.slice(), startedAt:connectStartedAt});
-  // 他チームの履歴 (経過秒 0..60、すこしずつズラして変化感を出す)
-  DEMO_GROUPS.forEach((g,i)=>{
-    if(g.name==='教室中央チーム') return;
+  // 他参加者の履歴 (経過秒 0..60、すこしずつズラして変化感を出す)
+  DEMO_PARTICIPANTS.forEach((g,i)=>{
+    if(g.name===DEMO_SELF_NAME) return;
     const recent=[];
     for(let k=0;k<=60;k++) recent.push({e: k, v: jitter(g.base)});
-    sharedStudents['demo-'+i]=buildDemoStudent({name:g.name, place:g.memo, recent, startedAt:connectStartedAt});
+    sharedStudents['demo-'+i]=buildDemoStudent({name:g.name, place:g.place, recent, startedAt:connectStartedAt});
   });
 
   updateShareCounts();
@@ -963,7 +984,7 @@ function startDemo(){
   // 連続更新 (300ms ごと、経過秒を増やしながら追加)
   demoIntervals.push(setInterval(()=>{
     const e = currentElapsed();
-    const newV = jitter(1280);
+    const newV = jitter(DEMO_SELF_BASE);
     localHistory.push({e, v: newV});
     trimToWindow(localHistory);
     latestValue = newV;
@@ -976,8 +997,8 @@ function startDemo(){
         startedAt:connectStartedAt
       });
     }
-    DEMO_GROUPS.forEach((g,i)=>{
-      if(g.name==='教室中央チーム') return;
+    DEMO_PARTICIPANTS.forEach((g,i)=>{
+      if(g.name===DEMO_SELF_NAME) return;
       const k='demo-'+i;
       if(!sharedStudents[k]) return;
       sharedStudents[k].recent.push({e, v: jitter(g.base)});
@@ -986,7 +1007,7 @@ function startDemo(){
       while(sharedStudents[k].recent.length>0 && sharedStudents[k].recent[0].e<cutoff) sharedStudents[k].recent.shift();
       // 集計値も更新
       const updated = buildDemoStudent({
-        name:g.name, place:g.memo,
+        name:g.name, place:g.place,
         recent:sharedStudents[k].recent,
         startedAt:connectStartedAt
       });
